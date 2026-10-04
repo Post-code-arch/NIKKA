@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+/* Dark post-production theme: near-black background, deep grey surfaces, one vivid accent. */
+:root {
+  --background: oklch(0.13 0 0);
+  --foreground: oklch(0.93 0 0);
+  --card: oklch(0.18 0 0);
+  --card-foreground: oklch(0.93 0 0);
+  --popover: oklch(0.18 0 0);
+  --popover-foreground: oklch(0.93 0 0);
+  --primary: oklch(0.72 0.19 45);
+  --primary-foreground: oklch(0.13 0 0);
+  --secondary: oklch(0.24 0 0);
+  --secondary-foreground: oklch(0.93 0 0);
+  --muted: oklch(0.22 0 0);
+  --muted-foreground: oklch(0.65 0 0);
+  --accent: oklch(0.26 0 0);
+  --accent-foreground: oklch(0.93 0 0);
+  --destructive: oklch(0.6 0.22 25);
+  --border: oklch(0.28 0 0);
+  --input: oklch(0.28 0 0);
+  --ring: oklch(0.72 0.19 45);
+  --radius: 0.5rem;
+
+  /* Origin badges (PRD §12) */
+  --origin-extracted: oklch(0.7 0 0);
+  --origin-proposed: oklch(0.78 0.16 75);
+  --origin-validated: oklch(0.72 0.17 150);
+
+  /* Reference tag colors, shared by canvas, bible and storyboard */
+  --tag-character: oklch(0.7 0.17 25);
+  --tag-location: oklch(0.7 0.14 160);
+  --tag-object: oklch(0.75 0.15 85);
+  --tag-look: oklch(0.68 0.18 300);
+  --tag-composition: oklch(0.7 0.13 230);
+  --tag-free: oklch(0.65 0 0);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-origin-extracted: var(--origin-extracted);
+  --color-origin-proposed: var(--origin-proposed);
+  --color-origin-validated: var(--origin-validated);
+  --color-tag-character: var(--tag-character);
+  --color-tag-location: var(--tag-location);
+  --color-tag-object: var(--tag-object);
+  --color-tag-look: var(--tag-look);
+  --color-tag-composition: var(--tag-composition);
+  --color-tag-free: var(--tag-free);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
