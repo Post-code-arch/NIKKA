@@ -142,3 +142,40 @@ body {
 .react-flow__attribution {
   display: none;
 }
+
+/*
+ * Ports: dots sitting on the card border (docs/design/DESIGN.md).
+ * Idle = small white dot cut into the border; connected = type color + halo.
+ */
+.react-flow__handle.nk-port {
+  width: 8px;
+  height: 8px;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 9999px;
+  border: 2px solid var(--background);
+  background: #e8e8e8;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+.react-flow__handle.nk-port[data-connected="true"] {
+  width: 10px;
+  height: 10px;
+  background: var(--port-color);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--port-color) 22%, transparent),
+    0 0 12px 2px color-mix(in srgb, var(--port-color) 55%, transparent);
+}
+.react-flow__handle.nk-port[data-connected="true"].react-flow__handle-left {
+  /* receiving end stays light, ringed with the incoming type color */
+  background: #f4f4f4;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--port-color) 70%, transparent),
+    0 0 10px 1px color-mix(in srgb, var(--port-color) 35%, transparent);
+}
+.react-flow__handle.nk-port:hover {
+  transform: translate(-50%, -50%) scale(1.35);
+}
+.react-flow__handle.nk-port.react-flow__handle-right:hover {
+  transform: translate(50%, -50%) scale(1.35);
+}

@@ -23,8 +23,11 @@ Référence : `reference-ui.jpg` (éditeur nodal sombre, panneaux flottants). El
 ## Node
 - L'en-tête est **au-dessus** de la carte : icône ✱ + titre en petit. Un chip d'action optionnel s'affiche à droite (ex. « Générer » en vert).
 - La carte est un rayon de 14 px en `surface`, avec une bordure de 1 px à 6 % de blanc et un panneau intérieur en `surface-2`.
-- Les ports sont des pastilles de 6 px, colorées par type, et alignées sur le libellé du champ.
+- Les ports (référence 2 : `reference-ports.jpg`) sont des pastilles posées **sur la bordure** de la carte, alignées sur la ligne de leur libellé, qui reste à l'intérieur de la carte.
+  - Au repos, la pastille est blanche, de 8 px, avec un anneau couleur du fond, comme découpée dans la bordure.
+  - Une fois connectée en sortie, elle prend la couleur du type de port et s'entoure d'un halo.
+  - Une fois connectée en entrée, elle reste claire et s'entoure d'un anneau de la couleur du type entrant.
 - Les champs suivent le schéma « libellé gris à gauche, contrôle en pilule sombre à droite ». Le stepper ‹ 30 › sert aux valeurs numériques.
-- Les liens sont des courbes fines en gris clair, sans flèche.
+- Les liens sont des courbes de Bézier fines (1,5 px), sans flèche, en dégradé de la couleur du port source vers un blanc atténué.
 
 Les tokens sont dans `app/globals.css`, les primitives dans `components/ui/*` et `components/nodes/*`.

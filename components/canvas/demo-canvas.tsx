@@ -4,8 +4,6 @@ import "@xyflow/react/dist/style.css";
 import {
   Background,
   BackgroundVariant,
-  Handle,
-  Position,
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
@@ -33,9 +31,10 @@ import {
   Wand2,
 } from "lucide-react";
 import { CornerStats } from "@/components/shell/corner-stats";
+import { GradientEdge } from "@/components/nodes/gradient-edge";
 import { NodeCard, NodeChip, NodeField, NodePanel, NodeValue, PortDot } from "@/components/nodes/node-card";
+import { Port } from "@/components/nodes/port";
 import { IconPill, Island, Pill } from "@/components/ui/pill";
-import { cn } from "@/lib/utils";
 
 /**
  * Visual preview of the node editor (docs/design/DESIGN.md).
@@ -48,32 +47,6 @@ const C = {
   negative: "var(--destructive)",
   image: "var(--port-image)",
 };
-
-function Port({
-  id,
-  kind,
-  color,
-  label,
-}: {
-  id: string;
-  kind: "source" | "target";
-  color: string;
-  label: string;
-}) {
-  const isOut = kind === "source";
-  return (
-    <div className={cn("flex items-center gap-2 py-0.5 text-[11px] text-muted-foreground", isOut && "flex-row-reverse")}>
-      <Handle
-        id={id}
-        type={kind}
-        position={isOut ? Position.Right : Position.Left}
-        className="!relative !inset-auto !size-1.5 !min-h-0 !min-w-0 !translate-none !rounded-full !border-0"
-        style={{ background: color }}
-      />
-      {label}
-    </div>
-  );
-}
 
 function ReferenceNode() {
   return (
@@ -180,8 +153,9 @@ function TakeNode() {
   return (
     <div className="flex flex-col items-center gap-3">
       <NodeCard title="Prise · image clé" width={260}>
-        <div className="mb-1.5 flex items-center gap-2 px-1.5 pt-0.5">
-          <Port id="in" kind="target" color={C.image} label="image" />
+        <div className="mb-1.5 flex items-center justify-between px-1.5 pt-0.5">
+          <Port id="in" kind="target" color={C.image} label="image" edgeOffset={13} />
+          <Port id="out" kind="source" color={C.image} label="vers vidéo" edgeOffset={13} />
         </div>
         <div className="relative aspect-[3/4] overflow-hidden rounded-[10px] bg-[radial-gradient(ellipse_at_30%_30%,#ff9a8b_0%,#c86dd7_30%,#3b82f6_60%,#0b1020_100%)]">
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-3 pt-10">
@@ -220,11 +194,13 @@ const nodes: Node[] = [
   { id: "take", type: "take", position: { x: 1010, y: -40 }, data: {} },
 ];
 
+const edgeTypes = { gradient: GradientEdge };
+
 const edges: Edge[] = [
-  { id: "e1", source: "ref", sourceHandle: "ref", target: "img", targetHandle: "refs" },
-  { id: "e2", source: "pos", sourceHandle: "out", target: "img", targetHandle: "pos" },
-  { id: "e3", source: "neg", sourceHandle: "out", target: "img", targetHandle: "neg" },
-  { id: "e4", source: "img", sourceHandle: "image", target: "take", targetHandle: "in" },
+  { id: "e1", type: "gradient", source: "ref", sourceHandle: "ref", target: "img", targetHandle: "refs", data: { from: C.character } },
+  { id: "e2", type: "gradient", source: "pos", sourceHandle: "out", target: "img", targetHandle: "pos", data: { from: C.text } },
+  { id: "e3", type: "gradient", source: "neg", sourceHandle: "out", target: "img", targetHandle: "neg", data: { from: C.negative } },
+  { id: "e4", type: "gradient", source: "img", sourceHandle: "image", target: "take", targetHandle: "in", data: { from: C.image } },
 ];
 
 function ZoomDock() {
@@ -272,6 +248,7 @@ export function DemoCanvas() {
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           fitView
           fitViewOptions={{ padding: { top: 0.1, bottom: 0.3, left: 0.1, right: 0.15 } }}
           proOptions={{ hideAttribution: true }}
