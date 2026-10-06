@@ -6,7 +6,11 @@ import {
   BackgroundVariant,
   ReactFlow,
   ReactFlowProvider,
+  addEdge,
+  useEdgesState,
+  useNodesState,
   useReactFlow,
+  type Connection,
   type Edge,
   type Node,
   type NodeProps,
@@ -186,7 +190,7 @@ const nodeTypes = {
   take: TakeNode,
 };
 
-const nodes: Node[] = [
+const initialNodes: Node[] = [
   { id: "ref", type: "reference", position: { x: 330, y: -150 }, data: {} },
   { id: "pos", type: "prompt", position: { x: 300, y: 20 }, data: {} },
   { id: "neg", type: "prompt", position: { x: 300, y: 260 }, data: { negative: true } },
@@ -196,7 +200,7 @@ const nodes: Node[] = [
 
 const edgeTypes = { gradient: GradientEdge };
 
-const edges: Edge[] = [
+const initialEdges: Edge[] = [
   { id: "e1", type: "gradient", source: "ref", sourceHandle: "ref", target: "img", targetHandle: "refs", data: { from: C.character } },
   { id: "e2", type: "gradient", source: "pos", sourceHandle: "out", target: "img", targetHandle: "pos", data: { from: C.text } },
   { id: "e3", type: "gradient", source: "neg", sourceHandle: "out", target: "img", targetHandle: "neg", data: { from: C.negative } },
@@ -240,13 +244,35 @@ function PromptDock() {
   );
 }
 
+/** Color of a new link = color of the source port it starts from. */
+const SOURCE_COLOR: Record<string, string> = {
+  "ref:ref": C.character,
+  "pos:out": C.text,
+  "neg:out": C.negative,
+  "img:image": C.image,
+  "take:out": C.image,
+};
+
 export function DemoCanvas() {
+  const [nodes, , onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const onConnect = (c: Connection) =>
+    setEdges((eds) =>
+      addEdge(
+        { ...c, type: "gradient", data: { from: SOURCE_COLOR[`${c.source}:${c.sourceHandle}`] ?? "var(--edge)" } },
+        eds,
+      ),
+    );
   return (
     <ReactFlowProvider>
       <div className="relative flex-1">
         <ReactFlow
           nodes={nodes}
           edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          deleteKeyCode={["Backspace", "Delete"]}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           fitView
