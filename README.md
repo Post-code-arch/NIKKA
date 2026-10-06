@@ -13,6 +13,12 @@ npm run dev                   # http://localhost:3000
 
 Prérequis : Node ≥ 20, `ffmpeg` dans le PATH (extraction de frames, médias factices du mode mock).
 
+### Lanceur (macOS)
+
+Double-clique sur **`NIKKA.command`** à la racine du dossier. Il récupère la dernière version, installe les dépendances si besoin, démarre l'app en mode mock et l'ouvre dans le navigateur. Ferme la fenêtre Terminal pour arrêter NIKKA.
+
+Le mode mock est activé par défaut. Pour passer en réel (générations facturées), mets `NIKKA_MOCK_ATLAS=0` dans `.env.local`.
+
 ## Scripts
 
 | Commande | Rôle |
