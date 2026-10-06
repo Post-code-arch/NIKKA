@@ -1,9 +1,11 @@
 /**
- * npm run atlas:smoke
+ * npm run atlas:smoke            dry run (default): free catalog + schema reads,
+ *                                 request bodies and cost estimate, no paid call
+ * npm run atlas:smoke -- --live   actually spend: 1 short LLM call, 1 text → image
+ *                                 with the cheapest image model, 1 image → video
  *
- * 1 short LLM call, 1 text → image with the cheapest image model found,
- * then 1 image → video from that image. Models and parameters are taken
- * from the live Atlas catalog and each model's published input schema.
+ * Models and parameters are taken from the live Atlas catalog and each
+ * model's published input schema.
  *
  * Env:
  *   NIKKA_MOCK_ATLAS=1              run against the local mock
@@ -42,6 +44,8 @@ import {
 } from "@/lib/atlas/schema-body";
 
 const MAX_USD = Number(process.env.NIKKA_SMOKE_MAX_USD ?? "0.5");
+/** Paid calls only with --live (mock mode is always free and runs fully). */
+const DRY_RUN = !process.argv.includes("--live") && !isMockMode();
 
 function log(step: string, msg: string) {
   console.log(`[${step}] ${msg}`);
@@ -67,7 +71,10 @@ async function pickModel(
       const schema = await getModelInputSchema(m);
       if (accept(schema)) return { model: m, schema };
     } catch (err) {
-      log(label, `skip ${m.model}: ${(err as Error).message}`);
+      const msg = (err as Error).message;
+      // A network failure is not specific to this model: stop instead of looping the catalog.
+      if (/Network error/.test(msg)) throw new Error(`${label}: cannot fetch model schemas (${msg}). Is static.atlascloud.ai reachable?`);
+      log(label, `skip ${m.model}: ${msg}`);
     }
   }
   throw new Error(`${label}: no usable model found`);
@@ -90,7 +97,12 @@ async function runLlm(models: CatalogModel[]) {
     id = llms[0]?.m.model;
   }
   if (!id) throw new Error("llm: no Text model in catalog");
+  if (!models.some((m) => m.model === id)) throw new Error(`llm: ${id} not in the Atlas catalog`);
   log("llm", `model ${id}`);
+  if (DRY_RUN) {
+    log("llm", "dry run: no call");
+    return;
+  }
   const res = await chat(
     [{ role: "user", content: "Réponds en un mot : quelle est la couleur du ciel par temps clair ?" }],
     { model: id, maxTokens: 50 },
@@ -99,7 +111,7 @@ async function runLlm(models: CatalogModel[]) {
 }
 
 async function main() {
-  console.log(`NIKKA atlas smoke — mode ${isMockMode() ? "MOCK" : "REAL"}\n`);
+  console.log(`NIKKA atlas smoke — mode ${isMockMode() ? "MOCK" : DRY_RUN ? "REAL (dry run, no paid call)" : "REAL (live, paid)"}\n`);
   const models = await listModels();
   log("catalog", `${models.length} models`);
 
@@ -139,6 +151,15 @@ async function main() {
   const total = costImage + costVideo;
   log("cost", `estimated total ~$${total.toFixed(4)} (cap $${MAX_USD})`);
   if (!(total <= MAX_USD)) throw new Error(`Estimated cost over NIKKA_SMOKE_MAX_USD, aborting before any paid call`);
+
+  if (DRY_RUN) {
+    const imgBody = buildBody(t2i.model.model, t2i.schema, { prompt: "Storyboard keyframe: a lone lighthouse on a cliff at dusk" });
+    const vidBody = buildBody(i2v.model.model, i2v.schema, { ...videoParams, [imageField]: "<uploaded image url>" });
+    log("t2i", `body ${JSON.stringify(imgBody)}`);
+    log("i2v", `body ${JSON.stringify(vidBody)}`);
+    console.log("\n✓ dry run passed (catalog, schemas and request bodies verified; nothing sent). Use --live to spend.");
+    return;
+  }
 
   // --- Text → image ---------------------------------------------------------
   const imgBody = buildBody(t2i.model.model, t2i.schema, {

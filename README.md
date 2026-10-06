@@ -18,7 +18,8 @@ Prérequis : Node ≥ 20, `ffmpeg` dans le PATH (extraction de frames, médias f
 | Commande | Rôle |
 |---|---|
 | `npm run atlas:smoke:mock` | Smoke test Atlas sans appel réseau (`NIKKA_MOCK_ATLAS=1`) |
-| `npm run atlas:smoke` | Smoke test réel : 1 appel LLM, 1 texte → image (modèle image le moins cher du catalogue), 1 image → vidéo. Coût estimé affiché, arrêt si > `NIKKA_SMOKE_MAX_USD` (0,5 $ par défaut) |
+| `npm run atlas:smoke` | Dry run gratuit : lit le catalogue et les schémas Atlas, choisit les modèles, construit les requêtes et affiche le coût estimé, sans rien envoyer |
+| `npm run atlas:smoke -- --live` | Test payant : 1 appel LLM, 1 texte → image (modèle image le moins cher), 1 image → vidéo. Arrêt si > `NIKKA_SMOKE_MAX_USD` (0,5 $ par défaut) |
 | `npm run typecheck` / `npm run lint` / `npm test` | Vérifications |
 
 ## Organisation
