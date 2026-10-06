@@ -11,7 +11,7 @@ export function CornerStats({
   return (
     <dl
       className={cn(
-        "pointer-events-none absolute bottom-4 z-10 grid grid-cols-[auto_auto] gap-x-1.5 font-mono text-[10px] leading-4 text-muted-foreground",
+        "pointer-events-none fixed bottom-4 z-10 grid grid-cols-[auto_auto] gap-x-1.5 font-mono text-[10px] leading-4 text-muted-foreground",
         side === "left" ? "left-4" : "right-4",
       )}
     >

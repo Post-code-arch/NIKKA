@@ -140,7 +140,11 @@ body {
   padding: 0;
 }
 .react-flow__attribution {
-  display: none;
+  background: transparent;
+  opacity: 0.35;
+}
+.react-flow__attribution a {
+  color: var(--muted-foreground);
 }
 
 /*

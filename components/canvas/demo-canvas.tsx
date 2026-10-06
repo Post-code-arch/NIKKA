@@ -277,7 +277,6 @@ export function DemoCanvas() {
           edgeTypes={edgeTypes}
           fitView
           fitViewOptions={{ padding: { top: 0.1, bottom: 0.3, left: 0.1, right: 0.15 } }}
-          proOptions={{ hideAttribution: true }}
           minZoom={0.3}
           maxZoom={2}
         >
