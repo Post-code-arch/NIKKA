@@ -1,4 +1,4 @@
-import { and, eq, inArray, lte } from "drizzle-orm";
+import { and, eq, lte } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import type { Job } from "@/db/schema";
 import {
@@ -89,10 +89,18 @@ async function pollJob(job: Job): Promise<void> {
     if (Date.now() - job.createdAt > TIMEOUT_MS) {
       return finishFailed(job, `Suivi interrompu après ${Math.round(TIMEOUT_MS / 60000)} min (prédiction ${job.predictionId} toujours en cours côté Atlas)`);
     }
-    db.update(schema.takes)
-      .set({ status: "processing" })
-      .where(and(eq(schema.takes.id, job.takeId), eq(schema.takes.status, "queued")))
-      .run();
+    if (job.takeId) {
+      db.update(schema.takes)
+        .set({ status: "processing" })
+        .where(and(eq(schema.takes.id, job.takeId), eq(schema.takes.status, "queued")))
+        .run();
+    }
+    if (job.refGenerationId) {
+      db.update(schema.refGenerations)
+        .set({ status: "processing" })
+        .where(and(eq(schema.refGenerations.id, job.refGenerationId), eq(schema.refGenerations.status, "queued")))
+        .run();
+    }
     db.update(schema.jobs)
       .set({ attempts, lastPolledAt: Date.now(), nextPollAt: Date.now() + nextInterval(attempts, mock), error: null })
       .where(eq(schema.jobs.id, job.id))
@@ -108,9 +116,6 @@ async function pollJob(job: Job): Promise<void> {
   // Download everything first: Atlas URLs are temporary.
   const files = [];
   for (const url of urls) files.push(await downloadToAssets(url));
-
-  const take = db.select().from(schema.takes).where(eq(schema.takes.id, job.takeId)).get();
-  if (!take) return;
 
   const assetIds: string[] = [];
   for (const f of files) {
@@ -132,6 +137,21 @@ async function pollJob(job: Job): Promise<void> {
   }
   if (assetIds.length === 0) return finishFailed(job, "Aucun média image/vidéo dans la sortie");
 
+  if (job.takeId) completeTake(job, job.takeId, assetIds, attempts);
+  else if (job.refGenerationId) completeRefGeneration(job, job.refGenerationId, assetIds, attempts);
+}
+
+function markJobDone(tx: Pick<ReturnType<typeof getDb>, "update">, job: Job, attempts: number) {
+  tx.update(schema.jobs)
+    .set({ status: "completed", attempts, lastPolledAt: Date.now(), error: null })
+    .where(eq(schema.jobs.id, job.id))
+    .run();
+}
+
+function completeTake(job: Job, takeId: string, assetIds: string[], attempts: number) {
+  const db = getDb();
+  const take = db.select().from(schema.takes).where(eq(schema.takes.id, takeId)).get();
+  if (!take) return;
   db.transaction((tx) => {
     // V1: actual cost = estimate (PRD §11).
     tx.update(schema.takes)
@@ -157,23 +177,57 @@ async function pollJob(job: Job): Promise<void> {
         })
         .run();
     }
-    tx.update(schema.jobs)
-      .set({ status: "completed", attempts, lastPolledAt: Date.now(), error: null })
-      .where(eq(schema.jobs.id, job.id))
-      .run();
+    markJobDone(tx, job, attempts);
   });
   refreshShotStatus(take.shotId);
 }
 
+function completeRefGeneration(job: Job, genId: string, assetIds: string[], attempts: number) {
+  const db = getDb();
+  const gen = db.select().from(schema.refGenerations).where(eq(schema.refGenerations.id, genId)).get();
+  if (!gen) return;
+  db.transaction((tx) => {
+    tx.update(schema.refGenerations)
+      .set({ status: "completed", assetId: assetIds[0], costActualUsd: gen.costEstimatedUsd, error: null })
+      .where(eq(schema.refGenerations.id, gen.id))
+      .run();
+    // Extra outputs become extra candidates for the same view.
+    for (const assetId of assetIds.slice(1)) {
+      tx.insert(schema.refGenerations)
+        .values({
+          referenceId: gen.referenceId,
+          variantId: gen.variantId,
+          view: gen.view,
+          sourceAssetId: gen.sourceAssetId,
+          model: gen.model,
+          prompt: gen.prompt,
+          params: gen.params,
+          predictionId: gen.predictionId,
+          status: "completed",
+          assetId,
+          costEstimatedUsd: 0,
+          costActualUsd: 0,
+        })
+        .run();
+    }
+    markJobDone(tx, job, attempts);
+  });
+}
+
 function finishFailed(job: Job, error: string) {
   const db = getDb();
-  db.update(schema.takes).set({ status: "failed", error }).where(eq(schema.takes.id, job.takeId)).run();
+  if (job.takeId) db.update(schema.takes).set({ status: "failed", error }).where(eq(schema.takes.id, job.takeId)).run();
+  if (job.refGenerationId) {
+    db.update(schema.refGenerations).set({ status: "failed", error }).where(eq(schema.refGenerations.id, job.refGenerationId)).run();
+  }
   db.update(schema.jobs)
     .set({ status: "failed", error, lastPolledAt: Date.now(), attempts: job.attempts + 1 })
     .where(eq(schema.jobs.id, job.id))
     .run();
-  const take = db.select().from(schema.takes).where(eq(schema.takes.id, job.takeId)).get();
-  if (take) refreshShotStatus(take.shotId);
+  if (job.takeId) {
+    const take = db.select().from(schema.takes).where(eq(schema.takes.id, job.takeId)).get();
+    if (take) refreshShotStatus(take.shotId);
+  }
 }
 
 /** generating while a take is in flight, else to_review if any completed take exists. */
@@ -186,13 +240,4 @@ export function refreshShotStatus(shotId: string) {
   const done = list.some((t) => t.status === "completed");
   const status = inFlight ? "generating" : done ? "to_review" : "to_generate";
   db.update(schema.shots).set({ status }).where(eq(schema.shots.id, shotId)).run();
-}
-
-export function activeJobTakeIds(): string[] {
-  return getDb()
-    .select({ takeId: schema.jobs.takeId })
-    .from(schema.jobs)
-    .where(inArray(schema.jobs.status, ["active"]))
-    .all()
-    .map((r) => r.takeId);
 }

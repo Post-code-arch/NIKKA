@@ -74,3 +74,21 @@ export const VariantCreate = z.object({
   views: z.array(z.object({ assetId: z.string(), view: RefView })).optional(),
 });
 export const VariantUpdate = VariantCreate.partial();
+
+export const PackRequest = z.object({
+  variantId: z.string().min(1),
+  views: z.array(RefView).min(1).max(12),
+  modelId: z.string().min(1),
+  sourceAssetId: z.string().optional(),
+  confirmedCostUsd: z.number().nonnegative().optional(),
+  estimateOnly: z.boolean().optional(),
+});
+
+export const RegenerateRequest = z.object({ confirmedCostUsd: z.number().nonnegative().optional() });
+
+export const SelectPreviewRequest = z.object({
+  refs: z.array(z.object({ referenceId: z.string(), variantId: z.string().optional() })).max(20),
+  scale: z.enum(["extreme_wide", "wide", "full", "medium", "cowboy", "medium_close", "close", "extreme_close", "insert"]),
+  angle: z.enum(["eye_level", "high", "low", "overhead", "dutch"]).default("eye_level"),
+  maxSlots: z.number().int().min(1).max(30),
+});

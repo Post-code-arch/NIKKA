@@ -15,6 +15,11 @@ export const POST = handle(async (req: Request, { params }: Ctx) => {
   const db = getDb();
   if (!db.select().from(schema.projects).where(eq(schema.projects.id, id)).get()) return notFound("Projet");
   const input = await parseBody(req, ReferenceCreate);
-  const ref = db.insert(schema.references).values({ projectId: id, ...input }).returning().get();
+  // Every reference starts with one variant so images can be added right away.
+  const ref = db.transaction((tx) => {
+    const r = tx.insert(schema.references).values({ projectId: id, ...input }).returning().get();
+    tx.insert(schema.referenceVariants).values({ referenceId: r.id, name: "Principale" }).run();
+    return r;
+  });
   return json(ref, { status: 201 });
 });

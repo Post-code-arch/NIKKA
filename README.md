@@ -36,12 +36,20 @@ NIKKA_MOCK_ATLAS=1 npm run dev
 
 Onglet **Storyboard** : crée un projet, une séquence et un plan, écris l'action, puis clique sur « Image clé ». Le coût estimé s'affiche avant chaque lancement. La prise passe « En file » → « En cours » → terminée, et le fichier est stocké dans `storage/assets/`. « Animer » lance ensuite une vidéo à partir de la prise retenue. En mode mock, les images et vidéos sont factices et rien n'est facturé.
 
+### Bible et références (phase 2)
+
+Panneau **Bible** à gauche du Storyboard et du Canvas :
+- **+** crée un personnage, un lieu, un objet ou un look. Dans sa fiche, tu écris le descripteur (injecté tel quel dans les prompts), tu importes des images et tu étiquettes chaque vue (face, trois-quarts, profil, en pied…). Tu peux aussi ajouter des variantes (« Costume de nuit », « Blessé »).
+- **Assistant pack de référence** : à partir d'une image source ou du descripteur seul, il génère les vues standard. Tu valides celles à garder, ou tu relances une vue.
+- **Tester la sélection** : compare les vues envoyées au modèle pour deux échelles de plan (par exemple gros plan et plan large), avec l'angle et le nombre d'images maximum.
+
 ## Organisation
 
 - `lib/atlas` — client Atlas côté serveur uniquement : upload, génération, polling (backoff + timeout), téléchargement dans `storage/assets/<sha256>.<ext>`, catalogue et schémas d'entrée des modèles, LLM (SDK `openai`), mode mock.
 - `db` — schéma Drizzle (PRD §5) et migrations SQLite, base dans `data/nikka.db`.
 - `lib/models` — registre de modèles et adapters `mapInputs`. Les modèles Atlas réels ne sont ajoutés qu'après validation.
 - `lib/generation`, `lib/jobs` — création des prises (jamais d'écrasement, coût confirmé au-dessus du seuil) et poller serveur qui télécharge les sorties dès la complétion.
+- `lib/refs` — sélection automatique des vues selon l'échelle du plan (`select.ts`, testé), assistant de pack (`pack.ts`), libellés des vues.
 - `app/api` — routes CRUD projets / séquences / plans / références, génération, `/api/jobs`, `/api/assets/:id`.
 - `storage/assets`, `data` — médias et base locale (non versionnés).
 

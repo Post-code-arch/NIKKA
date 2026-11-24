@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "atlas:smoke": "tsx scripts/atlas-smoke.ts",
     "atlas:smoke:mock": "NIKKA_MOCK_ATLAS=1 tsx scripts/atlas-smoke.ts",

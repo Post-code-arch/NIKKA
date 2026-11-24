@@ -32,5 +32,5 @@ export function getApiKey(): string {
 }
 
 export function getAssetsDir(): string {
-  return path.resolve(process.env.NIKKA_ASSETS_DIR ?? "./storage/assets");
+  return path.resolve(/*turbopackIgnore: true*/ process.env.NIKKA_ASSETS_DIR ?? "./storage/assets");
 }

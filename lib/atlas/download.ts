@@ -34,7 +34,13 @@ TYPE_BY_EXT[".jpeg"] = "image/jpeg";
 function resolveType(headerType: string | null, url: string): { type: string; ext: string } {
   const clean = (headerType ?? "").split(";")[0].trim().toLowerCase();
   if (EXT_BY_TYPE[clean]) return { type: clean, ext: EXT_BY_TYPE[clean] };
-  const urlExt = path.extname(new URL(url).pathname).toLowerCase();
+  let pathname = url;
+  try {
+    pathname = new URL(url).pathname;
+  } catch {
+    /* plain file name */
+  }
+  const urlExt = path.extname(pathname).toLowerCase();
   if (TYPE_BY_EXT[urlExt]) return { type: TYPE_BY_EXT[urlExt], ext: urlExt === ".jpeg" ? ".jpg" : urlExt };
   return { type: clean || "application/octet-stream", ext: urlExt || ".bin" };
 }
@@ -66,14 +72,21 @@ async function fetchBytes(url: string): Promise<{ data: Buffer; contentType: str
  * Downloads one output into storage/assets, content-addressed by sha256.
  * Identical files are stored once.
  */
-export async function downloadToAssets(url: string): Promise<StoredFile> {
+/**
+ * Writes bytes into storage/assets, content-addressed by sha256.
+ * Identical files are stored once.
+ */
+export async function writeToAssets(
+  data: Buffer,
+  contentType: string | null,
+  nameOrUrl: string,
+): Promise<Omit<StoredFile, "sourceUrl">> {
   assertServer();
-  const { data, contentType } = await fetchBytes(url);
   const sha256 = createHash("sha256").update(data).digest("hex");
-  const { type, ext } = resolveType(contentType, url.startsWith(MOCK_SCHEME) ? `http://mock/${url.slice(MOCK_SCHEME.length)}` : url);
+  const { type, ext } = resolveType(contentType, nameOrUrl);
   const dir = getAssetsDir();
   await mkdir(dir, { recursive: true });
-  const absolutePath = path.join(dir, `${sha256}${ext}`);
+  const absolutePath = path.join(/*turbopackIgnore: true*/ dir, `${sha256}${ext}`);
   if (!(await exists(absolutePath))) {
     const tmp = `${absolutePath}.${process.pid}.tmp`;
     await writeFile(tmp, data);
@@ -86,8 +99,14 @@ export async function downloadToAssets(url: string): Promise<StoredFile> {
     bytes: data.length,
     contentType: type,
     kind: type.startsWith("image/") ? "image" : type.startsWith("video/") ? "video" : "other",
-    sourceUrl: url,
   };
+}
+
+/** Downloads one output into storage/assets. */
+export async function downloadToAssets(url: string): Promise<StoredFile> {
+  const { data, contentType } = await fetchBytes(url);
+  const hint = url.startsWith(MOCK_SCHEME) ? `http://mock/${url.slice(MOCK_SCHEME.length)}` : url;
+  return { ...(await writeToAssets(data, contentType, hint)), sourceUrl: url };
 }
 
 export async function downloadOutputs(urls: string[]): Promise<StoredFile[]> {

@@ -17,6 +17,22 @@ export const MOCK_MODELS: ModelEntry[] = [
     mapInputs: (g) => ({ prompt: g.prompt, ...(g.seed !== undefined ? { seed: g.seed } : {}) }),
   },
   {
+    id: "mock/edit-multi-ref",
+    label: "Mock · édition multi-références",
+    kind: "i2i",
+    maxReferenceImages: 4,
+    supportsSeed: true,
+    pricing: { unit: "image", usd: 0.005 },
+    tier: "quality",
+    endpoint: "generateImage",
+    mock: true,
+    mapInputs: (g) => ({
+      prompt: g.prompt,
+      images: g.referenceImageUrls ?? [],
+      ...(g.seed !== undefined ? { seed: g.seed } : {}),
+    }),
+  },
+  {
     id: "mock/image-to-video",
     label: "Mock · image → vidéo",
     kind: "i2v",

@@ -9,6 +9,8 @@ import type { SequenceTree } from "@/lib/projects/queries";
 import { formatUsd } from "@/lib/cost/estimate";
 import { api } from "@/lib/store/api";
 import { inFlightCount, useProjectStore } from "@/lib/store/project-store";
+import { useUiStore } from "@/lib/store/ui-store";
+import { cn } from "@/lib/utils";
 import { ShotCard } from "./shot-card";
 
 function SequenceRow({ seq, index, onChanged }: { seq: SequenceTree; index: number; onChanged: () => void }) {
@@ -73,6 +75,7 @@ function EmptyState() {
 /** Phase 1 board: sequences, shots, generation and takes. Full storyboard comes in phase 6. */
 export function Board() {
   const { project, currentProjectId, refresh } = useProjectStore();
+  const bibleOpen = useUiStore((s) => s.bibleOpen);
   const pending = inFlightCount(project);
   if (!currentProjectId) return <EmptyState />;
   if (!project) return <div className="grid flex-1 place-items-center text-xs text-muted-foreground">Chargement…</div>;
@@ -81,7 +84,7 @@ export function Board() {
   const onChanged = () => void refresh();
 
   return (
-    <div className="relative flex-1 overflow-y-auto px-8 pt-8 pb-24">
+    <div className={cn("relative flex-1 overflow-y-auto pt-8 pr-8 pb-24", bibleOpen ? "pl-[304px]" : "pl-8 pt-14")}>
       {project.sequences.map((seq, i) => (
         <SequenceRow key={seq.id} seq={seq} index={i} onChanged={onChanged} />
       ))}
