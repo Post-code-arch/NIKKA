@@ -25,17 +25,32 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-# Already running? Just open the browser.
-if curl -s -o /dev/null "$URL"; then
-  echo "NIKKA tourne déjà : ouverture de $URL"
-  open "$URL"
-  exit 0
-fi
-
-# Fetch the latest version (skipped if offline or local changes block it).
+# Fetch the latest version. package-lock.json can be rewritten by a local
+# npm install: restore it so it never blocks the update.
+UPDATED=0
 if command -v git >/dev/null 2>&1 && [ -d .git ]; then
   echo "• Mise à jour du code…"
-  git pull --ff-only --quiet || echo "  (mise à jour ignorée)"
+  git diff --quiet -- package-lock.json 2>/dev/null || git checkout -- package-lock.json
+  BEFORE="$(git rev-parse HEAD 2>/dev/null)"
+  if git pull --ff-only --quiet; then
+    [ "$BEFORE" != "$(git rev-parse HEAD)" ] && UPDATED=1 && echo "  ✓ nouvelle version récupérée"
+  else
+    echo "  ! mise à jour impossible (hors ligne ou fichiers modifiés). Détails : cd ~/NIKKA && git status"
+  fi
+fi
+
+# Already running?
+if curl -s -o /dev/null "$URL"; then
+  if [ "$UPDATED" = 0 ]; then
+    echo "NIKKA tourne déjà : ouverture de $URL"
+    open "$URL/storyboard"
+    exit 0
+  fi
+  # New version: the running server must restart (database migrations, new code).
+  echo "• Redémarrage de NIKKA pour appliquer la mise à jour…"
+  OLD_PIDS="$(lsof -ti "tcp:$PORT" 2>/dev/null)"
+  [ -n "$OLD_PIDS" ] && kill $OLD_PIDS 2>/dev/null
+  for _ in $(seq 1 10); do curl -s -o /dev/null "$URL" || break; sleep 1; done
 fi
 
 # Install dependencies only when package-lock.json changed.
