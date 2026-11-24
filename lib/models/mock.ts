@@ -41,9 +41,32 @@ export const MOCK_MODELS: ModelEntry[] = [
     tier: "draft",
     endpoint: "generateVideo",
     mock: true,
+    // Deliberately limited, to exercise the « mouvement non supporté » warning.
+    camera: {
+      movements: ["static", "pan_left", "pan_right", "tilt_up", "tilt_down", "dolly_in", "dolly_out", "zoom_in", "zoom_out", "handheld"],
+    },
     mapInputs: (g) => ({
       prompt: g.prompt,
       image: g.startImageUrl,
+      duration: g.durationSec && g.durationSec > 5 ? 10 : 5,
+    }),
+  },
+  {
+    id: "mock/image-to-video-pro",
+    label: "Mock · image → vidéo (pro)",
+    kind: "i2v",
+    supportsStartEndFrames: true,
+    durations: [5, 10],
+    pricing: { unit: "second", usd: 0.02 },
+    tier: "quality",
+    endpoint: "generateVideo",
+    mock: true,
+    // All movements; shows a per-model wording override.
+    camera: { phrases: { "movement.dolly_zoom": "vertigo effect (dolly zoom)" } },
+    mapInputs: (g) => ({
+      prompt: g.prompt,
+      image: g.startImageUrl,
+      ...(g.endImageUrl ? { end_image: g.endImageUrl } : {}),
       duration: g.durationSec && g.durationSec > 5 ? 10 : 5,
     }),
   },

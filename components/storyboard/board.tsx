@@ -11,9 +11,24 @@ import { api } from "@/lib/store/api";
 import { inFlightCount, useProjectStore } from "@/lib/store/project-store";
 import { useUiStore } from "@/lib/store/ui-store";
 import { cn } from "@/lib/utils";
+import { defaultModels, useModels } from "@/lib/store/models";
+import type { CameraCapabilities } from "@/lib/camera/phrasing";
 import { ShotCard } from "./shot-card";
+import { ShotInspector } from "./shot-inspector";
 
-function SequenceRow({ seq, index, onChanged }: { seq: SequenceTree; index: number; onChanged: () => void }) {
+function SequenceRow({
+  seq,
+  index,
+  onChanged,
+  videoCamera,
+  defaults,
+}: {
+  seq: SequenceTree;
+  index: number;
+  onChanged: () => void;
+  videoCamera?: CameraCapabilities;
+  defaults: { keyframe: string | null; video: string | null };
+}) {
   const project = useProjectStore((s) => s.project)!;
   const [title, setTitle] = useState(seq.title.value);
   return (
@@ -35,7 +50,8 @@ function SequenceRow({ seq, index, onChanged }: { seq: SequenceTree; index: numb
       </div>
       <div className="flex gap-5 overflow-x-auto pb-2">
         {seq.shots.map((sh, i) => (
-          <ShotCard key={sh.id} shot={sh} number={`${index + 1}.${i + 1}`} assets={project.assets} onChanged={onChanged} />
+          <ShotCard key={sh.id} shot={sh} number={`${index + 1}.${i + 1}`} assets={project.assets} onChanged={onChanged} videoCamera={videoCamera}
+            defaultKeyframeModel={defaults.keyframe} defaultVideoModel={defaults.video} />
         ))}
         {seq.shots.length === 0 && <p className="py-6 text-xs text-muted-foreground">Aucun plan dans cette séquence.</p>}
       </div>
@@ -76,30 +92,44 @@ function EmptyState() {
 export function Board() {
   const { project, currentProjectId, refresh } = useProjectStore();
   const bibleOpen = useUiStore((s) => s.bibleOpen);
+  const selectedShotId = useUiStore((s) => s.selectedShotId);
+  const modelsData = useModels();
   const pending = inFlightCount(project);
   if (!currentProjectId) return <EmptyState />;
   if (!project) return <div className="grid flex-1 place-items-center text-xs text-muted-foreground">Chargement…</div>;
   const shots = project.sequences.flatMap((s) => s.shots);
   const takes = shots.reduce((n, s) => n + s.takes.length, 0);
   const onChanged = () => void refresh();
+  const { keyframe, video } = defaultModels(modelsData?.models, project.settings);
+  const videoCamera = modelsData?.models.find((m) => m.id === video)?.camera;
+  const inspectorOpen = shots.some((s) => s.id === selectedShotId);
 
   return (
-    <div className={cn("relative flex-1 overflow-y-auto pt-8 pr-8 pb-24", bibleOpen ? "pl-[304px]" : "pl-8 pt-14")}>
-      {project.sequences.map((seq, i) => (
-        <SequenceRow key={seq.id} seq={seq} index={i} onChanged={onChanged} />
-      ))}
-      <Pill onClick={() => void api(`/api/projects/${project.id}/sequences`, { body: {} }).then(onChanged)}>
-        <Plus /> Séquence
-      </Pill>
-      <CornerStats
-        side="left"
-        items={[
-          ["Coût", formatUsd(project.cost.actualUsd)],
-          ["Plans", String(shots.length)],
-          ["Prises", String(takes)],
-          ["Jobs", String(pending)],
-        ]}
-      />
-    </div>
+    <>
+      <div
+        className={cn(
+          "relative flex-1 overflow-y-auto pt-8 pb-24",
+          bibleOpen ? "pl-[304px]" : "pl-8 pt-14",
+          inspectorOpen ? "pr-[372px]" : "pr-8",
+        )}
+      >
+        {project.sequences.map((seq, i) => (
+          <SequenceRow key={seq.id} seq={seq} index={i} onChanged={onChanged} videoCamera={videoCamera} defaults={{ keyframe, video }} />
+        ))}
+        <Pill onClick={() => void api(`/api/projects/${project.id}/sequences`, { body: {} }).then(onChanged)}>
+          <Plus /> Séquence
+        </Pill>
+        <CornerStats
+          side="left"
+          items={[
+            ["Coût", formatUsd(project.cost.actualUsd)],
+            ["Plans", String(shots.length)],
+            ["Prises", String(takes)],
+            ["Jobs", String(pending)],
+          ]}
+        />
+      </div>
+      {inspectorOpen && <ShotInspector project={project} />}
+    </>
   );
 }

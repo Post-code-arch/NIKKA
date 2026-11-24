@@ -8,6 +8,11 @@ import type { ShotStatus, Take } from "@/db/schema";
 import { formatUsd } from "@/lib/cost/estimate";
 import type { ProjectTree, ShotWithTakes } from "@/lib/projects/queries";
 import { api, assetUrl } from "@/lib/store/api";
+import { MovementIcon, ScaleIcon } from "@/components/camera/icons";
+import { MOVEMENT_LABEL, SCALE_LABEL } from "@/lib/camera/labels";
+import { supportsMovement, type CameraCapabilities } from "@/lib/camera/phrasing";
+import { DEFAULT_CAMERA } from "@/lib/camera/types";
+import { useUiStore } from "@/lib/store/ui-store";
 import { cn } from "@/lib/utils";
 import { GenerateDialog } from "./generate-dialog";
 
@@ -58,12 +63,24 @@ export function ShotCard({
   number,
   assets,
   onChanged,
+  videoCamera,
+  defaultKeyframeModel,
+  defaultVideoModel,
 }: {
   shot: ShotWithTakes;
   number: string;
   assets: ProjectTree["assets"];
   onChanged: () => void;
+  /** Camera capabilities of the project's video model, for the warning badge. */
+  videoCamera?: CameraCapabilities;
+  defaultKeyframeModel?: string | null;
+  defaultVideoModel?: string | null;
 }) {
+  const selectedShotId = useUiStore((s) => s.selectedShotId);
+  const selectShot = useUiStore((s) => s.selectShot);
+  const isSelected = selectedShotId === shot.id;
+  const camera = shot.camera?.value ?? DEFAULT_CAMERA;
+  const unsupported = !supportsMovement(videoCamera, camera.movement);
   const [description, setDescription] = useState(shot.description.value);
   const [dialog, setDialog] = useState<null | "keyframe" | "video">(null);
 
@@ -87,10 +104,23 @@ export function ShotCard({
         <span className="flex items-center gap-2">
           <span className="font-mono text-foreground">{number}</span>
           <span className="font-mono text-muted-foreground">{shot.durationSec}s</span>
+          <span className="flex items-center gap-0.5 text-muted-foreground" title={`${SCALE_LABEL[camera.scale]} · ${MOVEMENT_LABEL[camera.movement]}`}>
+            <ScaleIcon scale={camera.scale} className="size-4" />
+            <MovementIcon movement={camera.movement} className={cn("size-4", unsupported && "text-origin-proposed")} />
+            {unsupported && <AlertCircle className="size-3 text-origin-proposed" />}
+          </span>
         </span>
         <span className="text-muted-foreground">{STATUS_LABEL[shot.status]}</span>
       </div>
-      <div className="rounded-[14px] border bg-surface p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
+      <div
+        onClick={(e) => {
+          if (!(e.target as HTMLElement).closest("button,textarea,video")) selectShot(isSelected ? null : shot.id);
+        }}
+        className={cn(
+          "cursor-pointer rounded-[14px] border bg-surface p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.5)]",
+          isSelected && "border-foreground/50",
+        )}
+      >
         <div className="relative aspect-video overflow-hidden rounded-[10px] bg-surface-2">
           {selected ? (
             <TakeMedia take={selected} assets={assets} className="size-full" />
@@ -149,7 +179,7 @@ export function ShotCard({
 
       {dialog && (
         <GenerateDialog shot={shot} mode={dialog} parentTake={dialog === "video" ? keyframeForVideo : undefined}
-          initialPrompt={dialog === "keyframe" ? description : undefined}
+          defaultModelId={dialog === "video" ? defaultVideoModel : defaultKeyframeModel}
           onClose={() => setDialog(null)} onLaunched={onChanged} />
       )}
     </div>

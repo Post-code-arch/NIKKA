@@ -6,6 +6,7 @@ import { generateImage, generateVideo, uploadMedia } from "@/lib/atlas";
 import { DEFAULT_CONFIRM_THRESHOLD_USD, estimateCostUsd } from "@/lib/cost/estimate";
 import { ensurePoller } from "@/lib/jobs/poller";
 import { getModel } from "@/lib/models/registry";
+import { shotPromptPreview } from "@/lib/prompt/shot";
 import type { GenericInputs } from "@/lib/models/types";
 
 export class GenerationError extends Error {
@@ -84,6 +85,20 @@ export async function createTake(input: CreateTakeInput): Promise<Take> {
     seed: model.supportsSeed ? input.seed : undefined,
     durationSec: input.durationSec,
   };
+
+  if (model.kind === "i2i") {
+    // Multi-reference keyframe: send the views chosen for this shot's scale (PRD §7).
+    const picked = shotPromptPreview(input.shotId, { keyframe: model.id })?.references?.picked ?? [];
+    if (picked.length === 0) {
+      throw new GenerationError("Ce modèle a besoin d'images de référence : branche une référence de la bible avec des vues", 400);
+    }
+    const urls: string[] = [];
+    for (const p of picked) {
+      const asset = db.select().from(schema.assets).where(eq(schema.assets.id, p.assetId)).get();
+      if (asset) urls.push(await uploadMedia(path.resolve(asset.path)));
+    }
+    generic.referenceImageUrls = urls;
+  }
 
   if (model.kind === "i2v") {
     if (!input.parentTakeId) throw new GenerationError("Une image de départ (prise parente) est requise", 400);

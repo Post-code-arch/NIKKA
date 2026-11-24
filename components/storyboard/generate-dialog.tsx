@@ -7,6 +7,8 @@ import { IconPill } from "@/components/ui/pill";
 import type { Shot, Take } from "@/db/schema";
 import { formatUsd } from "@/lib/cost/estimate";
 import type { ModelInfo } from "@/lib/models/registry";
+import type { ShotPromptPreview } from "@/lib/prompt/shot";
+import { MOVEMENT_LABEL } from "@/lib/camera/labels";
 import { api, ApiError } from "@/lib/store/api";
 
 type Estimate = { costEstimatedUsd: number; thresholdUsd: number; needsConfirmation: boolean };
@@ -19,22 +21,26 @@ export function GenerateDialog({
   shot,
   mode,
   parentTake,
-  initialPrompt,
+  defaultModelId,
   onClose,
   onLaunched,
 }: {
   shot: Shot;
   mode: "keyframe" | "video";
   parentTake?: Take;
-  initialPrompt?: string;
+  /** The project's default model for this stage. */
+  defaultModelId?: string | null;
   onClose: () => void;
   onLaunched: () => void;
 }) {
-  const kind = mode === "video" ? "i2v" : "t2i";
+  const kinds = mode === "video" ? ["i2v"] : ["t2i", "i2i"];
   const [models, setModels] = useState<ModelInfo[] | null>(null);
   const [mock, setMock] = useState(false);
-  const [modelId, setModelId] = useState("");
-  const [prompt, setPrompt] = useState(initialPrompt ?? (mode === "video" ? "" : shot.description.value));
+  const [modelId, setModelId] = useState(defaultModelId ?? "");
+  // The assembled prompt (descriptors + action + camera + look) until the user edits it.
+  const [prompt, setPrompt] = useState("");
+  const [edited, setEdited] = useState(false);
+  const [preview, setPreview] = useState<ShotPromptPreview | null>(null);
   const [estimateFor, setEstimateFor] = useState<(Estimate & { modelId: string }) | null>(null);
   const estimate = estimateFor?.modelId === modelId ? estimateFor : null;
   const [confirmed, setConfirmed] = useState(false);
@@ -42,12 +48,24 @@ export function GenerateDialog({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void api<{ mock: boolean; models: ModelInfo[] }>(`/api/models?kind=${kind}`).then((r) => {
-      setModels(r.models);
+    void api<{ mock: boolean; models: ModelInfo[] }>("/api/models").then((r) => {
+      const usable = r.models.filter((m) => kinds.includes(m.kind));
+      setModels(usable);
       setMock(r.mock);
-      setModelId((cur) => cur || r.models[0]?.id || "");
+      setModelId((cur) => (usable.some((m) => m.id === cur) ? cur : usable[0]?.id || ""));
     });
-  }, [kind]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
+  useEffect(() => {
+    if (!modelId) return;
+    const q = new URLSearchParams({ [mode]: modelId });
+    void api<ShotPromptPreview>(`/api/shots/${shot.id}/prompt?${q}`).then((p) => {
+      setPreview(p);
+      if (!edited) setPrompt(p[mode].prompt);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelId, mode, shot.id]);
 
   useEffect(() => {
     if (!modelId) return;
@@ -56,8 +74,12 @@ export function GenerateDialog({
       .catch((e) => setError(e.message));
   }, [modelId, shot.id, shot.durationSec]);
 
+  const selectedModel = models?.find((m) => m.id === modelId);
+  const movementIssue = mode === "video" && preview && !preview.movement.supported;
+  const needsRefs = selectedModel?.kind === "i2i" && !(preview?.references?.picked.length);
+
   const canLaunch =
-    !!modelId && !!prompt.trim() && !!estimate && (!estimate.needsConfirmation || confirmed) && !busy;
+    !!modelId && !!prompt.trim() && !!estimate && !needsRefs && (!estimate.needsConfirmation || confirmed) && !busy;
 
   const launch = async () => {
     if (!estimate) return;
@@ -94,7 +116,7 @@ export function GenerateDialog({
 
         {models && models.length === 0 && (
           <p className="mb-3 rounded-md bg-surface-2 p-3 text-xs text-muted-foreground">
-            Aucun modèle {kind} n&apos;est encore validé dans le registre. Lance l&apos;app avec{" "}
+            Aucun modèle n&apos;est encore validé dans le registre. Lance l&apos;app avec{" "}
             <code className="font-mono">NIKKA_MOCK_ATLAS=1</code> pour tester sans dépenser.
           </p>
         )}
@@ -120,7 +142,10 @@ export function GenerateDialog({
         </label>
         <textarea
           value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
+          onChange={(e) => {
+            setPrompt(e.target.value);
+            setEdited(true);
+          }}
           rows={4}
           placeholder={mode === "video" ? "Travelling avant lent…" : "Décris l'image clé…"}
           className="mb-3 w-full resize-none rounded-md bg-surface-2 p-2 text-xs leading-relaxed outline-none placeholder:text-muted-foreground/60"
@@ -144,6 +169,24 @@ export function GenerateDialog({
           </label>
         )}
 
+        {movementIssue && (
+          <p className="mb-3 rounded-md border border-origin-proposed/40 bg-origin-proposed/10 p-2 text-xs">
+            <AlertTriangle className="mr-1 inline size-3.5 text-origin-proposed" />
+            Ce modèle ne sait pas faire « {MOVEMENT_LABEL[preview.movement.movement]} ».
+            {preview.movement.alternatives.length > 0 && <> Modèle compatible : {preview.movement.alternatives.map((a) => a.label).join(", ")}.</>}
+          </p>
+        )}
+        {needsRefs && (
+          <p className="mb-3 text-xs text-origin-proposed">
+            Ce modèle a besoin d&apos;images de référence : branche une référence de la bible (avec des vues) dans la fiche du plan.
+          </p>
+        )}
+        {preview?.references && preview.references.picked.length > 0 && selectedModel?.kind === "i2i" && (
+          <p className="mb-3 text-[11px] text-muted-foreground">
+            {preview.references.picked.length} vue{preview.references.picked.length > 1 ? "s" : ""} de référence envoyée
+            {preview.references.picked.length > 1 ? "s" : ""} : {preview.references.picked.map((p) => p.refName).filter((v, i, a) => a.indexOf(v) === i).join(", ")}.
+          </p>
+        )}
         {error && <p className="mb-3 text-xs text-destructive">{error}</p>}
 
         <Button className="w-full" disabled={!canLaunch} onClick={() => void launch()}>

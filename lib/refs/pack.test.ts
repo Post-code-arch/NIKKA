@@ -83,3 +83,38 @@ describe("pack pipeline (mock)", () => {
     await expect(launchPack({ referenceId: ref.id, variantId: variant.id, views: ["face_front"], modelId: "mock/edit-multi-ref" })).rejects.toThrow(/texte → image/);
   });
 });
+
+describe("shot prompt preview (mock)", () => {
+  it("updates with scale and movement, selects views, and flags unsupported moves", async () => {
+    const { getDb, schema } = await import("@/db");
+    const { shotPromptPreview } = await import("@/lib/prompt/shot");
+    const db = getDb();
+    const project = db.insert(schema.projects).values({ name: "S", settings: { defaultModels: {} } }).returning().get();
+    const ref = db.insert(schema.references).values({ projectId: project.id, name: "Lina", tag: "character", descriptor: "Femme au manteau rouge." }).returning().get();
+    db.insert(schema.referenceVariants).values({
+      referenceId: ref.id, name: "Principale",
+      views: [{ assetId: "a1", view: "face_front" }, { assetId: "a2", view: "full_body" }],
+    }).run();
+    const seq = db.insert(schema.sequences).values({ projectId: project.id, order: 0, title: { value: "S", origin: "validated" }, summary: { value: "", origin: "validated" } }).returning().get();
+    const shot = db.insert(schema.shots).values({
+      sequenceId: seq.id, order: 0, refIds: [ref.id],
+      description: { value: "Lina attend sur le quai", origin: "validated" },
+      camera: { value: { scale: "close", angle: "eye_level", movement: "orbit_left" }, origin: "validated" },
+    }).returning().get();
+
+    const models = { keyframe: "mock/edit-multi-ref", video: "mock/image-to-video" };
+    const close = shotPromptPreview(shot.id, models)!;
+    expect(close.keyframe.prompt).toBe("Femme au manteau rouge. Lina attend sur le quai. Close-up on the face.");
+    expect(close.video.prompt).toMatch(/orbits around the subject/);
+    expect(close.references!.picked.map((p) => p.view)).toEqual(["face_front"]);
+    expect(close.movement.supported).toBe(false);
+    expect(close.movement.alternatives.map((a) => a.id)).toEqual(["mock/image-to-video-pro"]);
+
+    db.update(schema.shots).set({ camera: { value: { scale: "wide", angle: "eye_level", movement: "dolly_in", speed: "slow" }, origin: "validated" } }).where(eq(schema.shots.id, shot.id)).run();
+    const wide = shotPromptPreview(shot.id, models)!;
+    expect(wide.keyframe.prompt).toMatch(/Wide shot\./);
+    expect(wide.video.prompt).toMatch(/dollies in toward the subject, slow and smooth/);
+    expect(wide.references!.picked.map((p) => p.view)).toEqual(["full_body"]);
+    expect(wide.movement.supported).toBe(true);
+  });
+});

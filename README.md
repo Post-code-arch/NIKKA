@@ -43,12 +43,24 @@ Panneau **Bible** à gauche du Storyboard et du Canvas :
 - **Assistant pack de référence** : à partir d'une image source ou du descripteur seul, il génère les vues standard. Tu valides celles à garder, ou tu relances une vue.
 - **Tester la sélection** : compare les vues envoyées au modèle pour deux échelles de plan (par exemple gros plan et plan large), avec l'angle et le nombre d'images maximum.
 
+### Langage caméra (phase 3)
+
+Clique sur une carte de plan pour ouvrir sa **fiche** à droite :
+- l'échelle, l'angle et le mouvement se choisissent par pictos ; la vitesse, l'optique et la profondeur de champ par pastilles ;
+- tu branches les références de la bible et tu choisis les modèles image clé et vidéo du projet ;
+- si le modèle vidéo ne sait pas faire le mouvement choisi, une alerte propose un modèle compatible ;
+- l'aperçu du **prompt final** se met à jour à chaque changement : descripteurs (jamais réécrits), action du plan, caméra, look. On voit aussi les vues de référence envoyées.
+
+« Image clé » et « Animer » partent de ce prompt assemblé, qui reste modifiable avant le lancement.
+
 ## Organisation
 
 - `lib/atlas` — client Atlas côté serveur uniquement : upload, génération, polling (backoff + timeout), téléchargement dans `storage/assets/<sha256>.<ext>`, catalogue et schémas d'entrée des modèles, LLM (SDK `openai`), mode mock.
 - `db` — schéma Drizzle (PRD §5) et migrations SQLite, base dans `data/nikka.db`.
 - `lib/models` — registre de modèles et adapters `mapInputs`. Les modèles Atlas réels ne sont ajoutés qu'après validation.
 - `lib/generation`, `lib/jobs` — création des prises (jamais d'écrasement, coût confirmé au-dessus du seuil) et poller serveur qui télécharge les sorties dès la complétion.
+- `lib/camera` — vocabulaire caméra : libellés FR, formulation anglaise par valeur, surcharges et capacités par modèle (`phrasing.ts`).
+- `lib/prompt` — assemblage du prompt d'un plan (`build.ts`) et aperçu par étape (`shot.ts`).
 - `lib/refs` — sélection automatique des vues selon l'échelle du plan (`select.ts`, testé), assistant de pack (`pack.ts`), libellés des vues.
 - `app/api` — routes CRUD projets / séquences / plans / références, génération, `/api/jobs`, `/api/assets/:id`.
 - `storage/assets`, `data` — médias et base locale (non versionnés).
