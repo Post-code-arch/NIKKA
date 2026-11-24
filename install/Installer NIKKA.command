@@ -48,6 +48,24 @@ fi
 # 4. Code
 if [ -d "$DIR/.git" ]; then
   echo "• NIKKA est déjà dans $DIR ✓"
+  echo "• Mise à jour…"
+  # A local npm install can rewrite package-lock.json: never let it block the update.
+  (cd "$DIR" && { git diff --quiet -- package-lock.json || git checkout -- package-lock.json; })
+  BEFORE="$(cd "$DIR" && git rev-parse HEAD)"
+  (cd "$DIR" && git pull --ff-only --quiet) \
+    || fail "Mise à jour impossible. Ouvre le Terminal, tape « cd ~/NIKKA && git status » et envoie le résultat."
+  if [ "$BEFORE" != "$(cd "$DIR" && git rev-parse HEAD)" ]; then
+    echo "  ✓ nouvelle version récupérée"
+    # Stop a NIKKA still running the old version so the new one starts.
+    OLD_PIDS="$(lsof -ti tcp:3000 2>/dev/null)"
+    if [ -n "$OLD_PIDS" ]; then
+      echo "• Arrêt de l'ancienne version…"
+      kill $OLD_PIDS 2>/dev/null
+      sleep 2
+    fi
+  else
+    echo "  ✓ déjà à jour"
+  fi
 elif [ -e "$DIR" ]; then
   fail "Le dossier $DIR existe mais ne contient pas NIKKA. Renomme-le, puis relance ce fichier."
 else
