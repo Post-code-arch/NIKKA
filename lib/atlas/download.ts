@@ -69,10 +69,6 @@ async function fetchBytes(url: string): Promise<{ data: Buffer; contentType: str
 }
 
 /**
- * Downloads one output into storage/assets, content-addressed by sha256.
- * Identical files are stored once.
- */
-/**
  * Writes bytes into storage/assets, content-addressed by sha256.
  * Identical files are stored once.
  */
