@@ -48,9 +48,12 @@ if curl -s -o /dev/null "$URL"; then
   fi
   # New version: the running server must restart (database migrations, new code).
   echo "• Redémarrage de NIKKA pour appliquer la mise à jour…"
-  OLD_PIDS="$(lsof -ti "tcp:$PORT" 2>/dev/null)"
-  [ -n "$OLD_PIDS" ] && kill $OLD_PIDS 2>/dev/null
-  for _ in $(seq 1 10); do curl -s -o /dev/null "$URL" || break; sleep 1; done
+  for pid in $(lsof -ti "tcp:$PORT" -sTCP:LISTEN 2>/dev/null); do
+    parent="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')"
+    if [ -n "$parent" ] && ps -o command= -p "$parent" 2>/dev/null | grep -q "next"; then kill "$parent" 2>/dev/null; fi
+    kill "$pid" 2>/dev/null
+  done
+  for _ in $(seq 1 15); do curl -s -o /dev/null -m 2 "$URL" || break; sleep 1; done
 fi
 
 # Install dependencies only when package-lock.json changed.

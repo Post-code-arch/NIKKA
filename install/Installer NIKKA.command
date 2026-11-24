@@ -19,6 +19,16 @@ fail() {
   exit 1
 }
 
+# Stops the NIKKA dev server listening on a port (and its Next.js parent).
+stop_server() {
+  for pid in $(lsof -ti "tcp:$1" -sTCP:LISTEN 2>/dev/null); do
+    parent="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')"
+    if [ -n "$parent" ] && ps -o command= -p "$parent" 2>/dev/null | grep -q "next"; then kill "$parent" 2>/dev/null; fi
+    kill "$pid" 2>/dev/null
+  done
+  for _ in $(seq 1 15); do curl -s -o /dev/null -m 2 "http://localhost:$1" || return 0; sleep 1; done
+}
+
 echo "▶ Installation de NIKKA"
 
 # 1. Node.js
@@ -57,11 +67,9 @@ if [ -d "$DIR/.git" ]; then
   if [ "$BEFORE" != "$(cd "$DIR" && git rev-parse HEAD)" ]; then
     echo "  ✓ nouvelle version récupérée"
     # Stop a NIKKA still running the old version so the new one starts.
-    OLD_PIDS="$(lsof -ti tcp:3000 2>/dev/null)"
-    if [ -n "$OLD_PIDS" ]; then
+    if curl -s -o /dev/null -m 5 "http://localhost:3000"; then
       echo "• Arrêt de l'ancienne version…"
-      kill $OLD_PIDS 2>/dev/null
-      sleep 2
+      stop_server 3000
     fi
   else
     echo "  ✓ déjà à jour"
