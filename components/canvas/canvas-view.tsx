@@ -2,20 +2,21 @@
 
 import { ReactFlowProvider } from "@xyflow/react";
 import { Plus } from "lucide-react";
-import { CornerStats } from "@/components/shell/corner-stats";
 import { Island, Pill } from "@/components/ui/pill";
-import { formatUsd } from "@/lib/cost/estimate";
 import { api } from "@/lib/store/api";
-import { inFlightCount, useProjectStore } from "@/lib/store/project-store";
+import { useProjectStore } from "@/lib/store/project-store";
 import { useUiStore } from "@/lib/store/ui-store";
-import { SequenceCanvas } from "./sequence-canvas";
+import { cn } from "@/lib/utils";
 import { ShotGraph } from "./shot-graph";
 
-/** Canvas view (PRD §9): the sequence's shots as folded recipes, or one unfolded shot graph. */
+/**
+ * Canvas view: one free node canvas per shot. The storyboard keeps its rigid
+ * pipeline; here the user builds workflows and sends results to the shot.
+ */
 export function CanvasView() {
   const project = useProjectStore((s) => s.project);
   const refresh = useProjectStore((s) => s.refresh);
-  const { canvasSequenceId, openShotId, setCanvas } = useUiStore();
+  const { openShotId, setCanvas } = useUiStore();
 
   if (!project) {
     return (
@@ -24,66 +25,70 @@ export function CanvasView() {
       </div>
     );
   }
-  // Remembered sequence, else the first one that has shots.
-  const remembered = project.sequences.findIndex((s) => s.id === canvasSequenceId);
-  const seqIndex = remembered >= 0 ? remembered : Math.max(0, project.sequences.findIndex((s) => s.shots.length > 0));
-  const sequence = project.sequences[seqIndex];
-  const openShot = project.sequences.flatMap((s, i) => s.shots.map((sh, j) => ({ sh, number: `${i + 1}.${j + 1}` }))).find((x) => x.sh.id === openShotId);
-  const shots = project.sequences.flatMap((s) => s.shots);
+
+  const shots = project.sequences.flatMap((s, i) => s.shots.map((sh, j) => ({ sh, seq: s, number: `${i + 1}.${j + 1}` })));
+  const current = shots.find((x) => x.sh.id === openShotId) ?? shots[0];
+
+  const addShot = () => {
+    const seq = current?.seq ?? project.sequences[0];
+    const create = seq
+      ? Promise.resolve(seq.id)
+      : api<{ id: string }>(`/api/projects/${project.id}/sequences`, { body: {} }).then((s) => s.id);
+    void create
+      .then((seqId) => api<{ id: string }>(`/api/sequences/${seqId}/shots`, { body: {} }))
+      .then((shot) => {
+        setCanvas({ openShotId: shot.id });
+        return refresh();
+      });
+  };
 
   return (
     <ReactFlowProvider>
-      {openShot ? (
-        <ShotGraph key={openShot.sh.id} project={project} shot={openShot.sh} number={openShot.number} onBack={() => setCanvas({ openShotId: null })} />
+      {current ? (
+        <ShotGraph key={current.sh.id} project={project} shot={current.sh} number={current.number} />
       ) : (
-        <>
-          {sequence ? (
-            <SequenceCanvas
-              key={sequence.id}
-              project={project}
-              sequence={sequence}
-              index={seqIndex}
-              onOpen={(id) => setCanvas({ openShotId: id })}
-            />
-          ) : (
-            <div className="grid flex-1 place-items-center text-xs text-muted-foreground">Aucune séquence : crée-en une.</div>
-          )}
-          <div className="pointer-events-none absolute top-3 right-4 left-[300px] z-10 flex justify-start">
-            <Island className="pointer-events-auto">
-              {project.sequences.map((s, i) => (
-                <Pill key={s.id} active={s.id === sequence?.id} onClick={() => setCanvas({ canvasSequenceId: s.id })}>
-                  <span className="font-mono">{i + 1}</span> {s.title.value}
-                  <span className="font-mono text-muted-foreground">{s.shots.length}</span>
-                </Pill>
-              ))}
-              {sequence && (
-                <Pill onClick={() => void api(`/api/sequences/${sequence.id}/shots`, { body: {} }).then(() => refresh())}>
-                  <Plus /> Plan
-                </Pill>
-              )}
-              <Pill
-                onClick={() =>
-                  void api<{ id: string }>(`/api/projects/${project.id}/sequences`, { body: {} }).then((s) => {
-                    setCanvas({ canvasSequenceId: s.id });
-                    return refresh();
-                  })
-                }
-              >
-                <Plus /> Séquence
-              </Pill>
-            </Island>
+        <div className="grid flex-1 place-items-center">
+          <div className="island w-80 p-4 text-center">
+            <p className="mb-1 text-sm">Aucun plan</p>
+            <p className="mb-3 text-[11px] text-muted-foreground">Chaque plan a son propre canvas nodal. Crée un premier plan.</p>
+            <Pill className="mx-auto bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground" onClick={addShot}>
+              <Plus /> Ajouter un plan
+            </Pill>
           </div>
-        </>
+        </div>
       )}
-      <CornerStats
-        side="left"
-        items={[
-          ["Coût", formatUsd(project.cost.actualUsd)],
-          ["Plans", String(shots.length)],
-          ["Prises", String(shots.reduce((n, s) => n + s.takes.length, 0))],
-          ["Jobs", String(inFlightCount(project))],
-        ]}
-      />
+
+      {/* Shot navigator */}
+      {shots.length > 0 && (
+        <div className="pointer-events-none absolute right-4 bottom-4 left-[300px] z-10 flex justify-center">
+          <Island className="pointer-events-auto max-w-full overflow-x-auto">
+            {project.sequences.map((seq, i) => (
+              <div key={seq.id} className="flex items-center gap-1">
+                {i > 0 && <span className="mx-1 h-4 w-px shrink-0 bg-border" />}
+                <span className="shrink-0 px-1 text-[10px] text-muted-foreground" title={seq.title.value}>
+                  Séq. {i + 1}
+                </span>
+                {seq.shots.map((sh, j) => (
+                  <Pill
+                    key={sh.id}
+                    active={sh.id === current?.sh.id}
+                    onClick={() => setCanvas({ openShotId: sh.id })}
+                    title={sh.description.value || "Sans action"}
+                    className={cn("shrink-0 px-2.5 font-mono")}
+                  >
+                    {i + 1}.{j + 1}
+                  </Pill>
+                ))}
+              </div>
+            ))}
+            <span className="mx-1 h-4 w-px shrink-0 bg-border" />
+            <Pill className="shrink-0" onClick={addShot} title="Nouveau plan dans la séquence en cours">
+              <Plus /> Plan
+            </Pill>
+          </Island>
+        </div>
+      )}
+
     </ReactFlowProvider>
   );
 }

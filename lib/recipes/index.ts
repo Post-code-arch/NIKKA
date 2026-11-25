@@ -2,8 +2,8 @@ import type { ReferenceTag } from "@/db/schema";
 import { NODE_SPECS, type GraphEdge, type GraphNode, type GraphNodeData, type NodeType, type ShotGraphData } from "@/lib/graph/types";
 
 /**
- * Recipes (PRD §9): predefined shot sub-graphs, shown folded as one block
- * and unfoldable to edit their internal nodes.
+ * Recipes (PRD §9): predefined sub-graphs. In the free canvas they are
+ * templates the user inserts, then edits like any other nodes.
  */
 
 export type RecipeId = "character" | "location" | "object" | "continuity" | "free";
@@ -11,15 +11,15 @@ export type RecipeId = "character" | "location" | "object" | "continuity" | "fre
 export const RECIPES: Record<RecipeId, { label: string; chain: string }> = {
   character: {
     label: "Plan personnage",
-    chain: "Références → Sélection des vues → Prompt → Édition multi-réf → Prise → Vidéo → Prise",
+    chain: "Références → Sélection des vues → Prompt du plan → Édition multi-réf → Vidéo",
   },
-  location: { label: "Plan lieu / ambiance", chain: "Références lieu + look → Prompt → Image → Prise → Vidéo → Prise" },
-  object: { label: "Plan objet / produit", chain: "Référence objet + look → Prompt → Édition multi-réf → Prise → Vidéo → Prise" },
+  location: { label: "Plan lieu / ambiance", chain: "Références lieu + look → Prompt du plan → Image → Vidéo" },
+  object: { label: "Plan objet / produit", chain: "Référence objet + look → Prompt du plan → Édition multi-réf → Vidéo" },
   continuity: {
     label: "Continuité",
-    chain: "Dernière image du plan précédent → image de départ → Vidéo → Prise",
+    chain: "Dernière image du plan précédent → Vidéo",
   },
-  free: { label: "Libre", chain: "Prompt → Image → Prise → Vidéo → Prise" },
+  free: { label: "Libre", chain: "Texte → Image → Vidéo" },
 };
 
 export const RECIPE_ORDER: RecipeId[] = ["character", "location", "object", "continuity", "free"];
@@ -48,11 +48,15 @@ export interface RecipeModels {
 class GraphBuilder {
   nodes: GraphNode[] = [];
   edges: GraphEdge[] = [];
-  private n = 0;
+
+  constructor(
+    private taken: { id: string }[] = [],
+    private origin = { x: 0, y: 0 },
+  ) {}
 
   add(type: NodeType, x: number, y: number, data: GraphNodeData = {}): string {
-    const id = `${type}-${++this.n}`;
-    this.nodes.push({ id, type, position: { x, y }, data });
+    const id = uniqueId([...this.taken, ...this.nodes], type);
+    this.nodes.push({ id, type, position: { x: this.origin.x + x, y: this.origin.y + y }, data });
     return id;
   }
 
@@ -65,22 +69,30 @@ class GraphBuilder {
   }
 }
 
-const COL = { refs: 0, mid: 320, gen: 660, take: 1000, video: 1340, vtake: 1680 };
+const COL = { refs: 0, mid: 320, gen: 660, video: 1040 };
 
+/**
+ * Nodes of a recipe, ready to be inserted in a free canvas (ids unique
+ * against `existing`, placed from `origin`). Generation nodes show their own
+ * results, so no Take node sits in the chain.
+ */
 export function buildRecipeGraph(
   recipe: RecipeId,
   refs: { id: string; tag: ReferenceTag }[],
   models: RecipeModels = {},
+  existing: { id: string }[] = [],
+  origin = { x: 0, y: 0 },
 ): ShotGraphData {
-  const g = new GraphBuilder();
+  const g = new GraphBuilder(existing, origin);
   const refNodes = refs.map((r, i) => g.add("reference", COL.refs, i * 150, { referenceId: r.id }));
-  const prompt = g.add("promptBuilder", COL.mid, recipe === "continuity" ? 260 : 220, recipe === "free" ? { override: "" } : {});
-  refNodes.forEach((id) => g.link(id, "ref", prompt, "refs"));
+  const prompt =
+    recipe === "free"
+      ? g.add("text", COL.mid, 220, { text: "" })
+      : g.add("promptBuilder", COL.mid, recipe === "continuity" ? 260 : 220);
+  if (recipe !== "free") refNodes.forEach((id) => g.link(id, "ref", prompt, "refs"));
 
   const video = g.add("videoGen", COL.video, 60, { modelId: models.i2v ?? undefined });
-  const vtake = g.add("take", COL.vtake, 60, { stage: "video" });
   g.link(prompt, "prompt", video, "prompt");
-  g.link(video, "video", vtake, "in");
 
   if (recipe === "continuity") {
     const frame = g.add("frameExtract", COL.mid, 0, { source: "previous_shot", which: "last" });
@@ -98,9 +110,7 @@ export function buildRecipeGraph(
     refNodes.forEach((id) => g.link(id, "ref", selector, "refs"));
     g.link(selector, "views", gen, "views");
   }
-  const take = g.add("take", COL.take, 60, { stage: "keyframe" });
-  g.link(gen, "image", take, "in");
-  g.link(take, "out", video, "start");
+  g.link(gen, "image", video, "start");
   return g.graph();
 }
 

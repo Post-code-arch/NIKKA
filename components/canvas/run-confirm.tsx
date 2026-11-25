@@ -8,7 +8,7 @@ import { formatUsd } from "@/lib/cost/estimate";
 import type { RunEstimate } from "@/lib/graph/run";
 import { api, ApiError } from "@/lib/store/api";
 
-export type RunRequest = { shotId: string; nodeId?: string; until?: "keyframe" | "video"; variants?: number };
+export type RunRequest = { shotId: string; nodeId: string; variants?: number };
 
 /**
  * Every paid run goes through here: estimate first; above the threshold or

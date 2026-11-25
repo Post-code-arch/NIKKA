@@ -34,6 +34,8 @@ export interface PortSpec {
 }
 
 export type NodeType =
+  | "text"
+  | "imageInput"
   | "reference"
   | "refSelector"
   | "promptBuilder"
@@ -53,6 +55,18 @@ export interface NodeSpec {
 }
 
 export const NODE_SPECS: Record<NodeType, NodeSpec> = {
+  text: {
+    label: "Texte",
+    description: "Un prompt écrit à la main",
+    inputs: [],
+    outputs: [{ id: "prompt", type: "text" }],
+  },
+  imageInput: {
+    label: "Image importée",
+    description: "Une image de ton disque (photo, croquis, référence)",
+    inputs: [],
+    outputs: [{ id: "image", type: "image" }],
+  },
   reference: {
     label: "Référence",
     description: "Un personnage, un lieu, un objet ou un look (bible ou local)",
@@ -66,8 +80,8 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     outputs: [{ id: "views", type: "views" }],
   },
   promptBuilder: {
-    label: "Prompt",
-    description: "Descripteurs + action + caméra + look",
+    label: "Prompt du plan",
+    description: "Descripteurs de la bible + action et caméra du plan + look",
     inputs: [{ id: "refs", type: "ref", multiple: true, optional: true }],
     outputs: [{ id: "prompt", type: "text" }],
   },
@@ -83,7 +97,8 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     description: "Génère une image clé fidèle aux références",
     inputs: [
       { id: "prompt", type: "text" },
-      { id: "views", type: "views" },
+      { id: "views", type: "views", optional: true },
+      { id: "images", type: "image", label: "images", multiple: true, optional: true },
     ],
     outputs: [{ id: "image", type: "image" }],
     generates: "keyframe",
@@ -93,6 +108,7 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     description: "Anime une image de départ",
     inputs: [
       { id: "start", type: "image", label: "image de départ" },
+      { id: "end", type: "image", label: "image de fin", optional: true },
       { id: "prompt", type: "text" },
     ],
     outputs: [{ id: "video", type: "video" }],
@@ -105,9 +121,9 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     outputs: [{ id: "image", type: "image" }],
   },
   take: {
-    label: "Prise",
-    description: "Les prises produites ; la prise retenue continue la chaîne",
-    inputs: [{ id: "in", type: "image", label: "entrée" }],
+    label: "Prise du plan",
+    description: "La prise retenue du plan dans le storyboard",
+    inputs: [],
     outputs: [{ id: "out", type: "image", label: "retenue" }],
   },
 };
@@ -116,12 +132,18 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
 export function portsOf(type: NodeType, data: GraphNodeData): { inputs: PortSpec[]; outputs: PortSpec[] } {
   const spec = NODE_SPECS[type];
   if (type === "take" && data.stage === "video") {
-    return { inputs: [{ id: "in", type: "video", label: "entrée" }], outputs: [{ id: "out", type: "video", label: "retenue" }] };
+    return { inputs: [], outputs: [{ id: "out", type: "video", label: "retenue" }] };
   }
   return spec;
 }
 
 export const GraphNodeDataSchema = z.looseObject({
+  /** text */
+  text: z.string().optional(),
+  /** imageInput */
+  assetId: z.string().optional(),
+  /** generation nodes: the result passed downstream (default: latest completed). */
+  selectedRunId: z.string().optional(),
   /** reference: the Reference row. */
   referenceId: z.string().optional(),
   /** generation nodes */
@@ -143,7 +165,7 @@ export type GraphNodeData = z.infer<typeof GraphNodeDataSchema>;
 
 export const GraphNodeSchema = z.object({
   id: z.string().min(1),
-  type: z.enum(["reference", "refSelector", "promptBuilder", "imageGen", "imageEdit", "videoGen", "frameExtract", "take"]),
+  type: z.enum(["text", "imageInput", "reference", "refSelector", "promptBuilder", "imageGen", "imageEdit", "videoGen", "frameExtract", "take"]),
   position: z.object({ x: z.number(), y: z.number() }),
   data: GraphNodeDataSchema,
 });

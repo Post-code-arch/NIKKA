@@ -1,13 +1,13 @@
-import { handle, json, parseBody } from "@/lib/api/http";
-import { ensureShotGraph, writeGraph } from "@/lib/graph/run";
 import { z } from "zod";
+import { handle, json, parseBody } from "@/lib/api/http";
+import { getCanvas, writeGraph } from "@/lib/graph/run";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-/** The shot's sub-graph (built from its recipe on first access). */
-export const GET = handle(async (_req: Request, { params }: Ctx) => json(ensureShotGraph((await params).id)));
+/** The shot's free canvas and its results. */
+export const GET = handle(async (_req: Request, { params }: Ctx) => json(getCanvas((await params).id)));
 
-/** Saves an edited graph (positions, nodes, links); refIds follow Reference nodes. */
+/** Saves the edited canvas (nodes, positions, links). */
 export const PUT = handle(async (req: Request, { params }: Ctx) => {
   const { graph } = await parseBody(req, z.object({ graph: z.unknown() }));
   return json({ graph: writeGraph((await params).id, graph) });

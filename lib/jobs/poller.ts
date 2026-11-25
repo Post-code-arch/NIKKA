@@ -101,6 +101,12 @@ async function pollJob(job: Job): Promise<void> {
         .where(and(eq(schema.refGenerations.id, job.refGenerationId), eq(schema.refGenerations.status, "queued")))
         .run();
     }
+    if (job.nodeRunId) {
+      db.update(schema.nodeRuns)
+        .set({ status: "processing" })
+        .where(and(eq(schema.nodeRuns.id, job.nodeRunId), eq(schema.nodeRuns.status, "queued")))
+        .run();
+    }
     db.update(schema.jobs)
       .set({ attempts, lastPolledAt: Date.now(), nextPollAt: Date.now() + nextInterval(attempts, mock), error: null })
       .where(eq(schema.jobs.id, job.id))
@@ -139,6 +145,7 @@ async function pollJob(job: Job): Promise<void> {
 
   if (job.takeId) completeTake(job, job.takeId, assetIds, attempts);
   else if (job.refGenerationId) completeRefGeneration(job, job.refGenerationId, assetIds, attempts);
+  else if (job.nodeRunId) completeNodeRun(job, job.nodeRunId, assetIds, attempts);
 }
 
 function markJobDone(tx: Pick<ReturnType<typeof getDb>, "update">, job: Job, attempts: number) {
@@ -214,11 +221,46 @@ function completeRefGeneration(job: Job, genId: string, assetIds: string[], atte
   });
 }
 
+function completeNodeRun(job: Job, runId: string, assetIds: string[], attempts: number) {
+  const db = getDb();
+  const run = db.select().from(schema.nodeRuns).where(eq(schema.nodeRuns.id, runId)).get();
+  if (!run) return;
+  db.transaction((tx) => {
+    tx.update(schema.nodeRuns)
+      .set({ status: "completed", assetId: assetIds[0], costActualUsd: run.costEstimatedUsd, error: null })
+      .where(eq(schema.nodeRuns.id, run.id))
+      .run();
+    // Extra outputs become extra results of the same node.
+    for (const assetId of assetIds.slice(1)) {
+      tx.insert(schema.nodeRuns)
+        .values({
+          shotId: run.shotId,
+          nodeId: run.nodeId,
+          kind: run.kind,
+          model: run.model,
+          prompt: run.prompt,
+          params: run.params,
+          seed: run.seed,
+          predictionId: run.predictionId,
+          status: "completed",
+          assetId,
+          costEstimatedUsd: 0,
+          costActualUsd: 0,
+        })
+        .run();
+    }
+    markJobDone(tx, job, attempts);
+  });
+}
+
 function finishFailed(job: Job, error: string) {
   const db = getDb();
   if (job.takeId) db.update(schema.takes).set({ status: "failed", error }).where(eq(schema.takes.id, job.takeId)).run();
   if (job.refGenerationId) {
     db.update(schema.refGenerations).set({ status: "failed", error }).where(eq(schema.refGenerations.id, job.refGenerationId)).run();
+  }
+  if (job.nodeRunId) {
+    db.update(schema.nodeRuns).set({ status: "failed", error }).where(eq(schema.nodeRuns.id, job.nodeRunId)).run();
   }
   db.update(schema.jobs)
     .set({ status: "failed", error, lastPolledAt: Date.now(), attempts: job.attempts + 1 })

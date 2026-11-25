@@ -185,6 +185,34 @@ export const refGenerations = sqliteTable(
   (t) => [index("refgen_reference_idx").on(t.referenceId)],
 );
 
+/**
+ * Output of a generation node in a shot's free canvas. Canvas results stay in
+ * the canvas until the user sends one to the shot, which creates a Take.
+ */
+export const nodeRuns = sqliteTable(
+  "node_runs",
+  {
+    id: id(),
+    shotId: text("shot_id").notNull().references(() => shots.id, { onDelete: "cascade" }),
+    nodeId: text("node_id").notNull(),
+    kind: text("kind").$type<"image" | "video">().notNull(),
+    model: text("model").notNull(),
+    prompt: text("prompt").notNull(),
+    params: text("params", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+    seed: integer("seed"),
+    predictionId: text("prediction_id"),
+    status: text("status").$type<TakeStatus>().notNull().default("queued"),
+    assetId: text("asset_id").references(() => assets.id),
+    costEstimatedUsd: real("cost_estimated_usd").notNull(),
+    costActualUsd: real("cost_actual_usd"),
+    error: text("error"),
+    /** Take created when the user sent this result to the shot. */
+    sentTakeId: text("sent_take_id"),
+    createdAt: now("created_at"),
+  },
+  (t) => [index("node_runs_shot_idx").on(t.shotId)],
+);
+
 export type JobStatus = "active" | "completed" | "failed";
 
 export const jobs = sqliteTable(
@@ -194,6 +222,7 @@ export const jobs = sqliteTable(
     /** Exactly one of takeId / refGenerationId is set. */
     takeId: text("take_id").references(() => takes.id, { onDelete: "cascade" }),
     refGenerationId: text("ref_generation_id").references(() => refGenerations.id, { onDelete: "cascade" }),
+    nodeRunId: text("node_run_id").references(() => nodeRuns.id, { onDelete: "cascade" }),
     predictionId: text("prediction_id").notNull(),
     endpoint: text("endpoint").$type<"generateImage" | "generateVideo">().notNull(),
     status: text("status").$type<JobStatus>().notNull().default("active"),
@@ -215,3 +244,4 @@ export type ReferenceVariant = typeof referenceVariants.$inferSelect;
 export type Asset = typeof assets.$inferSelect;
 export type Job = typeof jobs.$inferSelect;
 export type RefGeneration = typeof refGenerations.$inferSelect;
+export type NodeRun = typeof nodeRuns.$inferSelect;

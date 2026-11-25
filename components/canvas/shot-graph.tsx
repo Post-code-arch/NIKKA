@@ -13,7 +13,10 @@ import {
   type Edge,
   type Node,
 } from "@xyflow/react";
-import { ChevronLeft, Crosshair, Film, Grid2x2, Minus, Plus, Sparkles } from "lucide-react";
+import { ChevronDown, Crosshair, Grid2x2, LayoutTemplate, Minus, Plus } from "lucide-react";
+import { MovementIcon, ScaleIcon } from "@/components/camera/icons";
+import type { NodeRun } from "@/db/schema";
+import { DEFAULT_CAMERA } from "@/lib/camera/types";
 import { ReferenceDetail } from "@/components/bible/reference-detail";
 import { GradientEdge } from "@/components/nodes/gradient-edge";
 import { IconPill, Island, Pill } from "@/components/ui/pill";
@@ -67,24 +70,23 @@ function fromFlow(nodes: RfNode[], edges: Edge[]): ShotGraphData {
   };
 }
 
-/** Unfolded recipe of one shot: its sub-graph, editable (PRD §9). */
+/** Free node canvas of one shot: the user builds the workflow (templates optional). */
 export function ShotGraph({
   project,
   shot,
   number,
-  onBack,
 }: {
   project: ProjectTree;
   shot: ShotWithTakes;
   number: string;
-  onBack: () => void;
 }) {
   const rf = useReactFlow();
   const refresh = useProjectStore((s) => s.refresh);
   const models = useModels()?.models ?? [];
   const [nodes, setNodes, onNodesChange] = useNodesState<RfNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const [recipeId, setRecipeId] = useState<RecipeId>("free");
+  const [runs, setRuns] = useState<NodeRun[]>([]);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [preview, setPreview] = useState<ShotPromptPreview | null>(null);
   const [palette, setPalette] = useState<{ x: number; y: number; flow: { x: number; y: number } } | null>(null);
@@ -96,29 +98,42 @@ export function ShotGraph({
   }, [nodes, edges]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  type CanvasResponse = { graph: ShotGraphData; runs: NodeRun[] };
   const apply = useCallback(
-    (res: { graph: ShotGraphData; recipeId: RecipeId }) => {
+    (res: CanvasResponse) => {
       const flow = toFlow(res.graph, useProjectStore.getState().project ?? project);
       setNodes(flow.nodes);
       setEdges(flow.edges);
-      setRecipeId(res.recipeId);
+      setRuns(res.runs);
       setLoaded(true);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [shot.id],
   );
-  const load = useCallback(
-    () => api<{ graph: ShotGraphData; recipeId: RecipeId }>(`/api/shots/${shot.id}/graph`).then(apply),
-    [shot.id, apply],
+  const load = useCallback(() => api<CanvasResponse>(`/api/shots/${shot.id}/graph`).then(apply), [shot.id, apply]);
+  const loadRuns = useCallback(
+    () => api<CanvasResponse>(`/api/shots/${shot.id}/graph`).then((r) => setRuns(r.runs)),
+    [shot.id],
   );
 
   useEffect(() => {
-    void api<{ graph: ShotGraphData; recipeId: RecipeId }>(`/api/shots/${shot.id}/graph`).then((res) => {
+    void api<CanvasResponse>(`/api/shots/${shot.id}/graph`).then((res) => {
       apply(res);
-      setTimeout(() => rf.fitView(FIT), 50);
+      // An empty canvas starts at 100 % (fitting nothing would zoom in to the max).
+      setTimeout(() => (res.graph.nodes.length ? rf.fitView(FIT) : rf.setViewport({ x: 320, y: 140, zoom: 1 })), 50);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shot.id]);
+
+  // Follow generations in progress (results only: never overwrite local edits).
+  const pending = runs.some((r) => r.status === "queued" || r.status === "processing");
+  useEffect(() => {
+    if (!pending) return;
+    const t = setInterval(() => {
+      void fetch("/api/jobs?active=1").finally(() => void loadRuns());
+    }, 1500);
+    return () => clearInterval(t);
+  }, [pending, loadRuns]);
 
   const save = useCallback(
     (immediate = false) => {
@@ -158,8 +173,8 @@ export function ShotGraph({
 
   const afterRun = useCallback(() => {
     void refresh();
-    void load();
-  }, [refresh, load]);
+    void loadRuns();
+  }, [refresh, loadRuns]);
   const { run, dialog } = useRunner(afterRun);
 
   const updateData = useCallback(
@@ -178,7 +193,7 @@ export function ShotGraph({
     const conn = { source: c.source, sourceHandle: c.sourceHandle, target: c.target, targetHandle: c.targetHandle };
     if (!isValidEdge(graph, conn)) return;
     const target = graph.nodes.find((n) => n.id === c.target)!;
-    const multiple = target.type === "refSelector" || target.type === "promptBuilder";
+    const multiple = target.type === "refSelector" || target.type === "promptBuilder" || (target.type === "imageEdit" && c.targetHandle === "images");
     const id = `e-${c.source}-${c.sourceHandle}-${c.target}-${c.targetHandle}`;
     setEdges((es) => [
       // A single-input port is replaced, not doubled.
@@ -210,20 +225,15 @@ export function ShotGraph({
     });
   };
 
-  const branchReference = async (referenceId: string) => {
-    if (shot.refIds.includes(referenceId)) return;
-    await api(`/api/shots/${shot.id}`, { method: "PATCH", body: { refIds: [...shot.refIds, referenceId] } });
-    await refresh();
+  const insertTemplate = async (recipe: RecipeId) => {
+    setTemplatesOpen(false);
+    // Save pending edits first, then insert below the existing nodes.
+    await api(`/api/shots/${shot.id}/graph`, { method: "PUT", body: { graph: graphNow() } });
+    const bottom = latest.current.nodes.reduce((y, n) => Math.max(y, n.position.y + 420), 0);
+    await api(`/api/shots/${shot.id}/template`, { body: { recipeId: recipe, x: 0, y: latest.current.nodes.length ? bottom : 0 } });
     await load();
-  };
-
-  const changeRecipe = async (next: RecipeId) => {
-    if (next === recipeId) return;
-    if (!confirm(`Remplacer le graphe par la recette « ${RECIPES[next].label} » ? Les prises sont conservées.`)) return;
-    await api(`/api/shots/${shot.id}/recipe`, { body: { recipeId: next } });
     await refresh();
-    await load();
-    setTimeout(() => rf.fitView(FIT), 50);
+    setTimeout(() => rf.fitView(FIT), 60);
   };
 
   const ctx = {
@@ -231,12 +241,26 @@ export function ShotGraph({
     shot,
     models,
     preview,
+    runs,
+    graph: fromFlow(nodes, edges),
     updateData,
-    run: (nodeId: string, variants: number) => void run({ shotId: shot.id, nodeId, variants }),
-    selectTake: (takeId: string, nodeId: string) => {
-      // Keep the local graph in step so a pending save cannot drop the choice.
-      setNodes((ns) => ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, takeId } } : n)));
-      void api(`/api/shots/${shot.id}/select-take`, { body: { takeId, nodeId } }).then(() => refresh());
+    run: (nodeId: string, variants: number) => {
+      // Run on the saved graph: flush edits first.
+      void api(`/api/shots/${shot.id}/graph`, { method: "PUT", body: { graph: graphNow() } }).then(() =>
+        run({ shotId: shot.id, nodeId, variants }),
+      );
+    },
+    sendToShot: (runId: string) =>
+      void api(`/api/node-runs/${runId}/send`, { body: {} }).then(() => {
+        void loadRuns();
+        void refresh();
+      }),
+    uploadImage: (nodeId: string, file: File) => {
+      const form = new FormData();
+      form.append("files", file);
+      void fetch("/api/assets", { method: "POST", body: form })
+        .then((r) => r.json())
+        .then((assets: { id: string }[]) => assets[0] && updateData(nodeId, { assetId: assets[0].id }));
     },
     openReference: (id: string) => setRefDetail(id),
     promoteReference: (id: string) =>
@@ -258,7 +282,7 @@ export function ShotGraph({
           const id = e.dataTransfer.getData(NIKKA_REF_MIME);
           if (id) {
             e.preventDefault();
-            void branchReference(id);
+            addNode({ type: "reference", data: { referenceId: id }, group: "Entrées" }, rf.screenToFlowPosition({ x: e.clientX, y: e.clientY }));
           }
         }}
       >
@@ -288,37 +312,61 @@ export function ShotGraph({
           </ReactFlow>
         )}
 
-        <div className="pointer-events-none absolute top-3 right-4 left-[300px] z-10 flex items-center justify-between gap-2">
-          <Island className="pointer-events-auto">
-            <Pill className="bg-transparent" onClick={onBack}>
-              <ChevronLeft /> Séquence
-            </Pill>
-            <span className="px-2 font-mono text-xs">Plan {number}</span>
-            <select
-              value={recipeId}
-              onChange={(e) => void changeRecipe(e.target.value as RecipeId)}
-              title={RECIPES[recipeId].chain}
-              className="h-8 rounded-[10px] bg-surface-2 px-2 text-xs outline-none"
-            >
-              {RECIPE_ORDER.map((r) => (
-                <option key={r} value={r}>
-                  {RECIPES[r].label}
-                </option>
-              ))}
-            </select>
+        <div className="pointer-events-none absolute top-3 right-4 left-[300px] z-10 flex items-start gap-2">
+          <Island className="pointer-events-auto max-w-[520px]">
+            <span className="flex shrink-0 items-center gap-1.5 px-2 text-xs">
+              <span className="font-mono">Plan {number}</span>
+              <ScaleIcon scale={(shot.camera?.value ?? DEFAULT_CAMERA).scale} className="size-4 text-muted-foreground" />
+              <MovementIcon movement={(shot.camera?.value ?? DEFAULT_CAMERA).movement} className="size-4 text-muted-foreground" />
+            </span>
+            <span className="min-w-0 truncate pr-2 text-[11px] text-muted-foreground" title={shot.description.value}>
+              {shot.description.value || "Sans action"}
+            </span>
+          </Island>
+          <Island className="pointer-events-auto relative">
             <Pill onClick={(e) => openPalette(e.clientX, e.clientY + 24)}>
               <Plus /> Node
             </Pill>
-          </Island>
-          <Island className="pointer-events-auto">
-            <Pill className="bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground" onClick={() => void run({ shotId: shot.id, until: "keyframe" })}>
-              <Sparkles /> Image clé
+            <Pill onClick={() => setTemplatesOpen((o) => !o)}>
+              <LayoutTemplate /> Modèles <ChevronDown />
             </Pill>
-            <Pill onClick={() => void run({ shotId: shot.id, until: "video" })}>
-              <Film /> Animer
-            </Pill>
+            {templatesOpen && (
+              <div className="island absolute top-11 right-0 z-30 w-80 p-1.5">
+                <div className="px-2 py-1 text-[10px] text-muted-foreground">Insérer un modèle (modifiable ensuite)</div>
+                {RECIPE_ORDER.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => void insertTemplate(r)}
+                    className="block w-full rounded-md px-2 py-1.5 text-left hover:bg-surface-2"
+                  >
+                    <div className="text-xs">{RECIPES[r].label}</div>
+                    <div className="text-[10px] text-muted-foreground">{RECIPES[r].chain}</div>
+                  </button>
+                ))}
+              </div>
+            )}
           </Island>
         </div>
+
+        {loaded && nodes.length === 0 && (
+          <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center">
+            <div className="island pointer-events-auto w-96 p-4 text-center">
+              <p className="mb-1 text-sm">Canvas vide</p>
+              <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">
+                Construis ton workflow : <b>+ Node</b> ou double-clic sur le fond, glisse une référence de la bible, puis relie
+                les ports. Les résultats restent ici ; « Envoyer au plan » les ajoute aux prises du storyboard.
+              </p>
+              <div className="flex flex-wrap justify-center gap-1">
+                {RECIPE_ORDER.map((r) => (
+                  <Pill key={r} className="h-7 text-[11px]" onClick={() => void insertTemplate(r)} title={RECIPES[r].chain}>
+                    {RECIPES[r].label}
+                  </Pill>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         <Island className="absolute top-1/2 right-4 z-10 -translate-y-1/2 flex-col">
           <IconPill className="bg-transparent" aria-label="Zoom avant" onClick={() => rf.zoomIn()}><Plus /></IconPill>
@@ -327,8 +375,8 @@ export function ShotGraph({
           <IconPill className="bg-transparent" aria-label="Recentrer" onClick={() => rf.fitView({ ...FIT, maxZoom: 0.8 })}><Crosshair /></IconPill>
         </Island>
 
-        <p className="pointer-events-none absolute right-4 bottom-4 z-10 text-right text-[10px] text-muted-foreground">
-          Double-clic sur le fond : ajouter un node · glisse une référence de la bible ici pour la brancher · Suppr : effacer
+        <p className="pointer-events-none absolute top-[68px] right-4 z-10 text-right text-[10px] text-muted-foreground">
+          Double-clic sur le fond : ajouter un node · glisse une référence de la bible ici · Suppr : effacer
         </p>
 
         {palette && (
@@ -338,10 +386,7 @@ export function ShotGraph({
             references={project.references.map((r) => ({ id: r.id, name: r.name, tag: r.tag }))}
             onClose={() => setPalette(null)}
             onPick={(item) => {
-              if (item.type === "reference" && item.data?.referenceId) {
-                setPalette(null);
-                void branchReference(item.data.referenceId);
-              } else addNode(item, palette.flow);
+              addNode(item, palette.flow);
             }}
           />
         )}

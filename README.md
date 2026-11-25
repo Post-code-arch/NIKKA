@@ -53,15 +53,14 @@ Clique sur une carte de plan pour ouvrir sa **fiche** à droite :
 
 « Image clé » et « Animer » partent de ce prompt assemblé, qui reste modifiable avant le lancement.
 
-### Canvas et recettes (phase 4)
+### Canvas nodal libre (phase 4)
 
-Onglet **Canvas** :
-- **Vue séquence** : chaque plan est une recette repliée en un bloc (image retenue, références, pictos caméra). Boutons **Image clé**, **×4** (4 variantes, avec confirmation du total) et **Animer**. Glisse une référence de la bible sur un bloc pour la brancher.
-- **Double-clic sur un plan** (ou ⤢) : la recette se déplie en nodes — Référence, Sélection des vues, Prompt, Image (texte → image ou édition multi-réf), Vidéo, Extraction d'image, Prise. Les ports sont typés et colorés ; un lien entre types différents est refusé.
-- **+ Node** ou **double-clic sur le fond** : ajoute un node. **Suppr** efface. Les positions et les liens sont enregistrés.
-- Recettes : Plan personnage, Plan lieu / ambiance, Plan objet / produit, Continuité (part de la dernière image du plan précédent), Libre.
-- Sur chaque node de génération : modèle, seed avec verrou, variantes, coût estimé et état des prises. Le node Prise montre toutes les prises : un clic retient celle qui part en animation.
-- Une référence locale peut être promue avec **Ajouter à la bible**.
+Le **Storyboard** reste la voie rigide (Image clé, Animer, fiche du plan). Le **Canvas** est un espace nodal libre : **un canvas par plan**, vide au départ, où tu construis tes propres workflows.
+- Choisis le plan dans la barre du bas (1.1, 1.2…). **+ Node** ou **double-clic sur le fond** ajoute un node : Texte, Image importée, Référence (bible), Prise du plan (la prise retenue du storyboard), Prompt du plan, Sélection des vues, Extraction d'image, Image · texte → image, Image · édition multi-réf, Vidéo · image → vidéo.
+- Relie les ports : seuls les ports du même type se connectent. **Suppr** efface. Glisse une référence de la bible sur le canvas pour l'ajouter.
+- Chaque node de génération a son modèle, son seed (avec verrou), ses variantes (×4 avec confirmation du total) et le coût estimé. Ses **résultats restent dans le canvas** : clique sur une vignette pour choisir celle qui part vers les nodes suivants.
+- **Envoyer au plan** ajoute le résultat choisi aux prises du plan dans le storyboard.
+- **Modèles** insère une recette prête (Plan personnage, Lieu / ambiance, Objet / produit, Continuité, Libre) que tu modifies ensuite.
 
 ## Organisation
 
@@ -71,8 +70,8 @@ Onglet **Canvas** :
 - `lib/generation`, `lib/jobs` — création des prises (jamais d'écrasement, coût confirmé au-dessus du seuil) et poller serveur qui télécharge les sorties dès la complétion.
 - `lib/camera` — vocabulaire caméra : libellés FR, formulation anglaise par valeur, surcharges et capacités par modèle (`phrasing.ts`).
 - `lib/prompt` — assemblage du prompt d'un plan (`build.ts`) et aperçu par étape (`shot.ts`).
-- `lib/graph` — types de nodes et de ports (`types.ts`), moteur d'exécution serveur du graphe d'un plan (`run.ts`).
-- `lib/recipes` — recettes (sous-graphes prédéfinis) et synchronisation des références.
+- `lib/graph` — types de nodes et de ports (`types.ts`), moteur serveur du canvas libre d'un plan (`run.ts`) : résultats (`node_runs`) et envoi au plan.
+- `lib/recipes` — recettes devenues modèles à insérer dans le canvas, synchronisation des références.
 - `lib/refs` — sélection automatique des vues selon l'échelle du plan (`select.ts`, testé), assistant de pack (`pack.ts`), libellés des vues.
 - `app/api` — routes CRUD projets / séquences / plans / références, génération, `/api/jobs`, `/api/assets/:id`.
 - `storage/assets`, `data` — médias et base locale (non versionnés).

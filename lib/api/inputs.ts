@@ -92,12 +92,9 @@ export const SelectPreviewRequest = z.object({
   maxSlots: z.number().int().min(1).max(30),
 });
 
-export const RecipeRequest = z.object({ recipeId: z.enum(["character", "location", "object", "continuity", "free"]) });
 export const RunRequest = z.object({
-  nodeId: z.string().optional(),
-  until: z.enum(["keyframe", "video"]).optional(),
+  nodeId: z.string().min(1),
   variants: z.number().int().min(1).max(8).optional(),
   confirmedCostUsd: z.number().nonnegative().optional(),
   estimateOnly: z.boolean().optional(),
 });
-export const SelectTakeRequest = z.object({ takeId: z.string().min(1), nodeId: z.string().optional() });

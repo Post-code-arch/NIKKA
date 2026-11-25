@@ -51,10 +51,18 @@ export function getProjectTree(projectId: string): ProjectTree | null {
         .all()
     : [];
 
-  const cost = takeList.reduce(
+  // Canvas results are paid too (a result sent to the shot is not counted twice).
+  const runCosts = shotIds.length
+    ? db
+        .select({ e: schema.nodeRuns.costEstimatedUsd, a: schema.nodeRuns.costActualUsd })
+        .from(schema.nodeRuns)
+        .where(inArray(schema.nodeRuns.shotId, shotIds))
+        .all()
+    : [];
+  const cost = [...takeList.map((t) => ({ e: t.costEstimatedUsd, a: t.costActualUsd })), ...runCosts].reduce(
     (acc, t) => ({
-      estimatedUsd: acc.estimatedUsd + t.costEstimatedUsd,
-      actualUsd: acc.actualUsd + (t.costActualUsd ?? 0),
+      estimatedUsd: acc.estimatedUsd + t.e,
+      actualUsd: acc.actualUsd + (t.a ?? 0),
     }),
     { estimatedUsd: 0, actualUsd: 0 },
   );
