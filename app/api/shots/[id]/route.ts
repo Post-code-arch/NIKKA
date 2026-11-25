@@ -2,7 +2,6 @@ import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { handle, json, notFound, parseBody } from "@/lib/api/http";
 import { ShotUpdate } from "@/lib/api/inputs";
-import { syncGraphRefs } from "@/lib/graph/run";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -25,8 +24,6 @@ export const PATCH = handle(async (req: Request, { params }: Ctx) => {
   const patch = { ...input };
   if (input.description && current.status === "to_write" && input.description.value.trim()) patch.status ??= "to_generate";
   db.update(schema.shots).set(patch).where(eq(schema.shots.id, id)).run();
-  // References branched from the sheet or a drop appear as Reference nodes in the graph.
-  if (input.refIds) syncGraphRefs(id);
   return json(db.select().from(schema.shots).where(eq(schema.shots.id, id)).get());
 });
 

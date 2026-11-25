@@ -38,7 +38,7 @@ Onglet **Storyboard** : crée un projet, une séquence et un plan, écris l'acti
 
 ### Bible et références (phase 2)
 
-Panneau **Bible** à gauche du Storyboard et du Canvas :
+Panneau **Bible** à gauche du Storyboard :
 - **+** crée un personnage, un lieu, un objet ou un look. Dans sa fiche, tu écris le descripteur (injecté tel quel dans les prompts), tu importes des images et tu étiquettes chaque vue (face, trois-quarts, profil, en pied…). Tu peux aussi ajouter des variantes (« Costume de nuit », « Blessé »).
 - **Assistant pack de référence** : à partir d'une image source ou du descripteur seul, il génère les vues standard. Tu valides celles à garder, ou tu relances une vue.
 - **Tester la sélection** : compare les vues envoyées au modèle pour deux échelles de plan (par exemple gros plan et plan large), avec l'angle et le nombre d'images maximum.
@@ -55,12 +55,11 @@ Clique sur une carte de plan pour ouvrir sa **fiche** à droite :
 
 ### Canvas nodal libre (phase 4)
 
-Le **Storyboard** reste la voie rigide (Image clé, Animer, fiche du plan). Le **Canvas** est un espace nodal libre : **un canvas par plan**, vide au départ, où tu construis tes propres workflows.
-- Choisis le plan dans la barre du bas (1.1, 1.2…). **+ Node** ou **double-clic sur le fond** ajoute un node : Texte, Image importée, Référence (bible), Prise du plan (la prise retenue du storyboard), Prompt du plan, Sélection des vues, Extraction d'image, Image · texte → image, Image · édition multi-réf, Vidéo · image → vidéo.
-- Relie les ports : seuls les ports du même type se connectent. **Suppr** efface. Glisse une référence de la bible sur le canvas pour l'ajouter.
-- Chaque node de génération a son modèle, son seed (avec verrou), ses variantes (×4 avec confirmation du total) et le coût estimé. Ses **résultats restent dans le canvas** : clique sur une vignette pour choisir celle qui part vers les nodes suivants.
-- **Envoyer au plan** ajoute le résultat choisi aux prises du plan dans le storyboard.
-- **Modèles** insère une recette prête (Plan personnage, Lieu / ambiance, Objet / produit, Continuité, Libre) que tu modifies ensuite.
+Le **Storyboard** reste la voie rigide (Image clé, Animer, fiche du plan). Le **Canvas** est **un seul grand canvas par projet**, indépendant des séquences et des plans, vide au départ.
+- **+ Node** ou **double-clic sur le fond** ajoute l'un des 6 nodes : **Texte**, **Image** (import), **Vidéo** (import), **Texte → image**, **Texte → vidéo**, **Image → vidéo**.
+- Relie les ports de même couleur (texte vert, image bleu, vidéo rose) ; les autres liens sont refusés. Plusieurs Textes sur un même prompt sont mis bout à bout. **Suppr** efface.
+- Chaque node de génération a son modèle, sa durée (vidéo), son seed (avec verrou), ses variantes (confirmation du total pour tout lot) et son coût estimé. Ses **résultats restent dans le canvas** : clique sur une vignette pour choisir celle qui part vers les nodes suivants.
+- Optionnel : **Envoyer au plan…** propose la liste des plans du storyboard ; le résultat devient une prise de ce plan.
 
 ## Organisation
 
@@ -70,8 +69,7 @@ Le **Storyboard** reste la voie rigide (Image clé, Animer, fiche du plan). Le *
 - `lib/generation`, `lib/jobs` — création des prises (jamais d'écrasement, coût confirmé au-dessus du seuil) et poller serveur qui télécharge les sorties dès la complétion.
 - `lib/camera` — vocabulaire caméra : libellés FR, formulation anglaise par valeur, surcharges et capacités par modèle (`phrasing.ts`).
 - `lib/prompt` — assemblage du prompt d'un plan (`build.ts`) et aperçu par étape (`shot.ts`).
-- `lib/graph` — types de nodes et de ports (`types.ts`), moteur serveur du canvas libre d'un plan (`run.ts`) : résultats (`node_runs`) et envoi au plan.
-- `lib/recipes` — recettes devenues modèles à insérer dans le canvas, synchronisation des références.
+- `lib/graph` — les 6 nodes et leurs ports (`types.ts`), moteur serveur du canvas du projet (`run.ts`) : résultats (`node_runs`) et envoi optionnel à un plan.
 - `lib/refs` — sélection automatique des vues selon l'échelle du plan (`select.ts`, testé), assistant de pack (`pack.ts`), libellés des vues.
 - `app/api` — routes CRUD projets / séquences / plans / références, génération, `/api/jobs`, `/api/assets/:id`.
 - `storage/assets`, `data` — médias et base locale (non versionnés).

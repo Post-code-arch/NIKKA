@@ -3,8 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { RECIPE_ORDER, buildRecipeGraph, refIdsFromGraph, syncReferenceNodes } from "@/lib/recipes";
-import { NODE_SPECS, isValidEdge } from "./types";
+import { NODE_ORDER, NODE_SPECS, isValidEdge, sanitizeGraph, uniqueId, type CanvasGraph } from "./types";
 
 let dir: string;
 beforeAll(async () => {
@@ -20,209 +19,164 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-describe("recipe templates", () => {
-  const refs = [{ id: "lina", tag: "character" as const }, { id: "quai", tag: "location" as const }];
-  it.each(RECIPE_ORDER)("%s builds a valid graph with typed links", (recipe) => {
-    const g = buildRecipeGraph(recipe, refs, { t2i: "mock/text-to-image", i2i: "mock/edit-multi-ref", i2v: "mock/image-to-video" });
-    expect(g.edges.length).toBeGreaterThan(0);
-    for (const e of g.edges) expect(isValidEdge(g, e)).toBe(true);
-    expect(g.nodes.some((n) => NODE_SPECS[n.type].generates === "video")).toBe(true);
+const node = (id: string, type: CanvasGraph["nodes"][number]["type"], data = {}) => ({ id, type, position: { x: 0, y: 0 }, data });
+
+describe("node types", () => {
+  it("has exactly the six nodes", () => {
+    expect(NODE_ORDER).toEqual(["text", "image", "video", "textToImage", "textToVideo", "imageToVideo"]);
+    expect(NODE_ORDER.filter((t) => NODE_SPECS[t].model)).toEqual(["textToImage", "textToVideo", "imageToVideo"]);
   });
 
-  it("character template = refs → selector + prompt du plan → multi-ref edit → video", () => {
-    const g = buildRecipeGraph("character", refs);
-    expect(g.nodes.map((n) => n.type).sort()).toEqual(
-      ["imageEdit", "promptBuilder", "refSelector", "reference", "reference", "videoGen"].sort(),
-    );
+  it("links only ports of the same type", () => {
+    const g: CanvasGraph = { nodes: [node("t", "text"), node("i", "image"), node("v", "video"), node("i2v", "imageToVideo")], edges: [] };
+    expect(isValidEdge(g, { source: "t", sourceHandle: "text", target: "i2v", targetHandle: "prompt" })).toBe(true);
+    expect(isValidEdge(g, { source: "i", sourceHandle: "image", target: "i2v", targetHandle: "image" })).toBe(true);
+    expect(isValidEdge(g, { source: "t", sourceHandle: "text", target: "i2v", targetHandle: "image" })).toBe(false);
+    expect(isValidEdge(g, { source: "v", sourceHandle: "video", target: "i2v", targetHandle: "image" })).toBe(false);
   });
 
-  it("inserting twice never reuses node ids", () => {
-    const a = buildRecipeGraph("free", []);
-    const b = buildRecipeGraph("free", [], {}, a.nodes, { x: 0, y: 400 });
-    const ids = [...a.nodes, ...b.nodes].map((n) => n.id);
-    expect(new Set(ids).size).toBe(ids.length);
-    expect(b.nodes[0].position.y).toBeGreaterThanOrEqual(400);
+  it("drops nodes and links of earlier versions", () => {
+    const g = sanitizeGraph({
+      nodes: [node("t", "text"), { id: "old", type: "promptBuilder", position: { x: 0, y: 0 }, data: {} }, node("img", "textToImage")],
+      edges: [
+        { id: "a", source: "t", sourceHandle: "text", target: "img", targetHandle: "prompt" },
+        { id: "b", source: "old", sourceHandle: "prompt", target: "img", targetHandle: "prompt" },
+      ],
+    });
+    expect(g.nodes.map((n) => n.id)).toEqual(["t", "img"]);
+    expect(g.edges.map((e) => e.id)).toEqual(["a"]);
   });
 
-  it("rejects links between different port types", () => {
-    const g = buildRecipeGraph("character", refs);
-    const prompt = g.nodes.find((n) => n.type === "promptBuilder")!;
-    const video = g.nodes.find((n) => n.type === "videoGen")!;
-    expect(isValidEdge(g, { source: prompt.id, sourceHandle: "prompt", target: video.id, targetHandle: "start" })).toBe(false);
-  });
-
-  it("keeps Reference nodes in step with refIds", () => {
-    const g = buildRecipeGraph("character", refs);
-    const g2 = syncReferenceNodes(g, ["lina", "neon"]);
-    expect(refIdsFromGraph(g2).sort()).toEqual(["lina", "neon"]);
-    for (const e of g2.edges) expect(isValidEdge(g2, e)).toBe(true);
+  it("never reuses node ids", () => {
+    expect(uniqueId([{ id: "text-2" }], "text")).toBe("text-3");
   });
 });
 
-async function settle(shotId: string) {
+async function makeProject(name: string) {
+  const { getDb, schema } = await import("@/db");
+  const db = getDb();
+  const project = db.insert(schema.projects).values({ name, settings: { defaultModels: {} } }).returning().get();
+  return { db, schema, project };
+}
+
+async function settle(projectId: string) {
   const { getDb, schema } = await import("@/db");
   const { pollDueJobs } = await import("@/lib/jobs/poller");
   for (let i = 0; i < 100; i++) {
     await pollDueJobs(Date.now() + 60_000);
-    const runs = getDb().select().from(schema.nodeRuns).where(eq(schema.nodeRuns.shotId, shotId)).all();
+    const runs = getDb().select().from(schema.nodeRuns).where(eq(schema.nodeRuns.projectId, projectId)).all();
     if (runs.every((r) => r.status === "completed" || r.status === "failed")) return runs;
     await new Promise((r) => setTimeout(r, 20));
   }
   throw new Error("runs never finished");
 }
 
-async function makeShot(name: string, extra: Record<string, unknown> = {}) {
-  const { getDb, schema } = await import("@/db");
-  const db = getDb();
-  const project = db.insert(schema.projects).values({ name, settings: { defaultModels: {} } }).returning().get();
-  const seq = db.insert(schema.sequences).values({ projectId: project.id, order: 0, title: { value: "S", origin: "validated" }, summary: { value: "", origin: "validated" } }).returning().get();
-  const mk = (order: number) =>
-    db.insert(schema.shots).values({
-      sequenceId: seq.id, order, durationSec: 5,
-      description: { value: "Lina attend sur le quai", origin: "validated" },
-      camera: { value: { scale: "close", angle: "eye_level", movement: "dolly_in", speed: "slow" }, origin: "validated" },
-      ...extra,
-    }).returning().get();
-  return { db, schema, project, seq, mk };
-}
-
-describe("free canvas (mock)", () => {
-  it("starts empty; user-built text → image → video runs; results stay in the canvas until sent", async () => {
-    const { db, schema, mk } = await makeShot("Free");
-    const shot = mk(0);
+describe("project canvas (mock)", () => {
+  it("lives without any sequence; text → image → video; results stay until sent to a shot", async () => {
+    const { db, schema, project } = await makeProject("Free");
     const { getCanvas, writeGraph, runNode, sendToShot, estimateRun } = await import("./run");
-    expect(getCanvas(shot.id).graph.nodes).toHaveLength(0);
+    expect(getCanvas(project.id).graph.nodes).toHaveLength(0);
 
-    writeGraph(shot.id, {
+    writeGraph(project.id, {
       nodes: [
-        { id: "t", type: "text", position: { x: 0, y: 0 }, data: { text: "Un phare dans la tempête, gravure" } },
-        { id: "img", type: "imageGen", position: { x: 300, y: 0 }, data: { modelId: "mock/text-to-image" } },
-        { id: "vid", type: "videoGen", position: { x: 600, y: 0 }, data: { modelId: "mock/image-to-video" } },
+        node("t", "text", { text: "Un phare dans la tempête, gravure" }),
+        node("img", "textToImage", { modelId: "mock/text-to-image" }),
+        node("vid", "imageToVideo", { modelId: "mock/image-to-video" }),
       ],
       edges: [
-        { id: "e1", source: "t", sourceHandle: "prompt", target: "img", targetHandle: "prompt" },
-        { id: "e2", source: "img", sourceHandle: "image", target: "vid", targetHandle: "start" },
-        { id: "e3", source: "t", sourceHandle: "prompt", target: "vid", targetHandle: "prompt" },
+        { id: "e1", source: "t", sourceHandle: "text", target: "img", targetHandle: "prompt" },
+        { id: "e2", source: "img", sourceHandle: "image", target: "vid", targetHandle: "image" },
+        { id: "e3", source: "t", sourceHandle: "text", target: "vid", targetHandle: "prompt" },
       ],
     });
 
-    // 4 variants of the image: a batch always needs a confirmed total.
-    const est = estimateRun(shot.id, { nodeId: "img", variants: 4 });
+    // A batch always needs a confirmed total.
+    const est = estimateRun(project.id, { nodeId: "img", variants: 4 });
     expect(est.needsConfirmation).toBe(true);
-    await expect(runNode(shot.id, { nodeId: "img", variants: 4 })).rejects.toThrow(/Confirmation/);
-    const four = await runNode(shot.id, { nodeId: "img", variants: 4, confirmedCostUsd: est.costEstimatedUsd });
+    await expect(runNode(project.id, { nodeId: "img", variants: 4 })).rejects.toThrow(/Confirmation/);
+    const four = await runNode(project.id, { nodeId: "img", variants: 4, confirmedCostUsd: est.costEstimatedUsd });
     expect(four.runs).toHaveLength(4);
-    expect(four.runs[0].prompt).toBe("Un phare dans la tempête, gravure"); // free text, as written
-    await settle(shot.id);
+    expect(four.runs[0].prompt).toBe("Un phare dans la tempête, gravure"); // as written
+    expect(four.runs[0].shotId).toBeNull();
+    await settle(project.id);
 
     // Choose the third result: the video starts from it.
-    const g = getCanvas(shot.id).graph;
+    const g = getCanvas(project.id).graph;
     g.nodes.find((n) => n.id === "img")!.data.selectedRunId = four.runs[2].id;
-    writeGraph(shot.id, g);
-    const anim = await runNode(shot.id, { nodeId: "vid" });
-    const runs = await settle(shot.id);
+    writeGraph(project.id, g);
+    const anim = await runNode(project.id, { nodeId: "vid" });
+    const runs = await settle(project.id);
     expect(runs.find((r) => r.id === anim.runs[0].id)?.status).toBe("completed");
     expect(String(anim.runs[0].params.image)).toMatch(/^mock:\/\/upload\//);
 
-    // Nothing reached the storyboard yet…
-    expect(db.select().from(schema.takes).where(eq(schema.takes.shotId, shot.id)).all()).toHaveLength(0);
-    // …until the user sends a result.
-    const take = sendToShot(anim.runs[0].id);
+    // Optional link to the storyboard: create a shot later and send the result to it.
+    const seq = db.insert(schema.sequences).values({ projectId: project.id, order: 0, title: { value: "S", origin: "validated" }, summary: { value: "", origin: "validated" } }).returning().get();
+    const shot = db.insert(schema.shots).values({ sequenceId: seq.id, order: 0, description: { value: "", origin: "validated" }, camera: { value: { scale: "wide", angle: "eye_level", movement: "static" }, origin: "validated" } }).returning().get();
+    const take = sendToShot(anim.runs[0].id, shot.id);
+    expect(take.shotId).toBe(shot.id);
     expect(take.stage).toBe("video");
     expect(take.costEstimatedUsd).toBe(0); // already counted on the run
-    expect(sendToShot(anim.runs[0].id).id).toBe(take.id); // idempotent
+    expect(sendToShot(anim.runs[0].id, shot.id).id).toBe(take.id); // same shot: idempotent
   }, 60_000);
 
-  it("prompt du plan assembles bible descriptors + action + camera; imageEdit takes imported images", async () => {
-    const { db, schema, project, mk } = await makeShot("Plan");
+  it("text → video uses the node duration", async () => {
+    const { project } = await makeProject("T2V");
+    const { writeGraph, runNode } = await import("./run");
+    writeGraph(project.id, {
+      nodes: [node("t", "text", { text: "Vagues" }), node("v", "textToVideo", { durationSec: 10 })],
+      edges: [{ id: "e", source: "t", sourceHandle: "text", target: "v", targetHandle: "prompt" }],
+    });
+    const r = await runNode(project.id, { nodeId: "v" });
+    expect(r.runs[0].kind).toBe("video");
+    expect(r.runs[0].params.duration).toBe(10);
+    expect(r.estimate.unitCostUsd).toBeCloseTo(0.15);
+  });
+
+  it("image → video starts from an imported image; refuses without one", async () => {
+    const { project } = await makeProject("I2V");
     const { storeAsset } = await import("@/lib/media/store");
     const { makeMockPng } = await import("@/lib/atlas/mock");
-    const ref = db.insert(schema.references).values({ projectId: project.id, name: "Lina", tag: "character", descriptor: "Lina, manteau rouge." }).returning().get();
-    const shot = mk(0);
     const photo = await storeAsset(makeMockPng("00aa00"), "image/png", "photo.png");
     const { writeGraph, runNode } = await import("./run");
-    writeGraph(shot.id, {
-      nodes: [
-        { id: "r", type: "reference", position: { x: 0, y: 0 }, data: { referenceId: ref.id } },
-        { id: "p", type: "promptBuilder", position: { x: 300, y: 0 }, data: {} },
-        { id: "in", type: "imageInput", position: { x: 0, y: 200 }, data: { assetId: photo.id } },
-        { id: "edit", type: "imageEdit", position: { x: 600, y: 0 }, data: { modelId: "mock/edit-multi-ref" } },
-      ],
+    writeGraph(project.id, {
+      nodes: [node("t", "text", { text: "Elle se retourne" }), node("v", "imageToVideo")],
+      edges: [{ id: "e1", source: "t", sourceHandle: "text", target: "v", targetHandle: "prompt" }],
+    });
+    await expect(runNode(project.id, { nodeId: "v" })).rejects.toThrow(/image de départ/);
+    writeGraph(project.id, {
+      nodes: [node("t", "text", { text: "Elle se retourne" }), node("i", "image", { assetId: photo.id }), node("v", "imageToVideo")],
       edges: [
-        { id: "e1", source: "r", sourceHandle: "ref", target: "p", targetHandle: "refs" },
-        { id: "e2", source: "p", sourceHandle: "prompt", target: "edit", targetHandle: "prompt" },
-        { id: "e3", source: "in", sourceHandle: "image", target: "edit", targetHandle: "images" },
+        { id: "e1", source: "t", sourceHandle: "text", target: "v", targetHandle: "prompt" },
+        { id: "e2", source: "i", sourceHandle: "image", target: "v", targetHandle: "image" },
       ],
     });
-    // The reference placed in the canvas becomes a reference of the shot.
-    expect(db.select().from(schema.shots).where(eq(schema.shots.id, shot.id)).get()!.refIds).toEqual([ref.id]);
-    const r = await runNode(shot.id, { nodeId: "edit" });
-    expect(r.runs[0].prompt).toBe("Lina, manteau rouge. Lina attend sur le quai. Close-up on the face.");
-    expect(r.runs[0].params.images).toHaveLength(1);
+    const r = await runNode(project.id, { nodeId: "v" });
+    expect(String(r.runs[0].params.image)).toMatch(/^mock:\/\/upload\//);
   });
 
   it("locked seed gives seed, seed+1… across variants", async () => {
-    const { mk } = await makeShot("Seed");
-    const shot = mk(0);
+    const { project } = await makeProject("Seed");
     const { writeGraph, runNode } = await import("./run");
-    writeGraph(shot.id, {
-      nodes: [
-        { id: "t", type: "text", position: { x: 0, y: 0 }, data: { text: "Un phare" } },
-        { id: "img", type: "imageGen", position: { x: 300, y: 0 }, data: { seedLocked: true, seed: 1000 } },
-      ],
-      edges: [{ id: "e1", source: "t", sourceHandle: "prompt", target: "img", targetHandle: "prompt" }],
+    writeGraph(project.id, {
+      nodes: [node("t", "text", { text: "Un phare" }), node("img", "textToImage", { seedLocked: true, seed: 1000 })],
+      edges: [{ id: "e1", source: "t", sourceHandle: "text", target: "img", targetHandle: "prompt" }],
     });
-    const r = await runNode(shot.id, { nodeId: "img", variants: 3, confirmedCostUsd: 1 });
+    const r = await runNode(project.id, { nodeId: "img", variants: 3, confirmedCostUsd: 1 });
     expect(r.runs.map((x) => x.seed)).toEqual([1000, 1001, 1002]);
   });
 
-  it("continuity template starts from the last frame of the previous shot's retained video", async () => {
-    const { db, schema, mk } = await makeShot("Cont");
-    const a = mk(0);
-    const b = mk(1);
-    const { writeGraph, runNode, sendToShot, insertTemplate } = await import("./run");
-    writeGraph(a.id, {
-      nodes: [
-        { id: "t", type: "text", position: { x: 0, y: 0 }, data: { text: "Plan A" } },
-        { id: "img", type: "imageGen", position: { x: 300, y: 0 }, data: {} },
-        { id: "vid", type: "videoGen", position: { x: 600, y: 0 }, data: {} },
-      ],
-      edges: [
-        { id: "e1", source: "t", sourceHandle: "prompt", target: "img", targetHandle: "prompt" },
-        { id: "e2", source: "img", sourceHandle: "image", target: "vid", targetHandle: "start" },
-        { id: "e3", source: "t", sourceHandle: "prompt", target: "vid", targetHandle: "prompt" },
-      ],
+  it("refuses to send a result to a shot of another project", async () => {
+    const { db, schema, project } = await makeProject("A");
+    const other = await makeProject("B");
+    const { writeGraph, runNode, sendToShot } = await import("./run");
+    writeGraph(project.id, {
+      nodes: [node("t", "text", { text: "x" }), node("img", "textToImage")],
+      edges: [{ id: "e1", source: "t", sourceHandle: "text", target: "img", targetHandle: "prompt" }],
     });
-    await runNode(a.id, { nodeId: "img" });
-    await settle(a.id);
-    const v = await runNode(a.id, { nodeId: "vid" });
-    await settle(a.id);
-    const take = sendToShot(v.runs[0].id);
-    db.update(schema.shots).set({ selectedTakeId: take.id }).where(eq(schema.shots.id, a.id)).run();
-
-    const g = insertTemplate(b.id, "continuity");
-    const video = g.nodes.find((n) => n.type === "videoGen")!;
-    const r = await runNode(b.id, { nodeId: video.id });
-    expect(String(r.runs[0].params.image)).toMatch(/^mock:\/\/upload\//);
-  }, 60_000);
-});
-
-describe("graphs from earlier versions", () => {
-  it("drops links to ports that no longer exist, so the canvas stays editable", async () => {
-    const { db, schema, mk } = await makeShot("Legacy");
-    const shot = mk(0);
-    const legacy = {
-      nodes: [
-        { id: "imageEdit-1", type: "imageEdit", position: { x: 0, y: 0 }, data: {} },
-        { id: "take-1", type: "take", position: { x: 300, y: 0 }, data: { stage: "keyframe" } },
-      ],
-      edges: [{ id: "old", source: "imageEdit-1", sourceHandle: "image", target: "take-1", targetHandle: "in" }],
-    };
-    db.update(schema.shots).set({ graph: legacy }).where(eq(schema.shots.id, shot.id)).run();
-    const { getCanvas, writeGraph } = await import("./run");
-    const { graph } = getCanvas(shot.id);
-    expect(graph.nodes).toHaveLength(2);
-    expect(graph.edges).toHaveLength(0);
-    expect(() => writeGraph(shot.id, graph)).not.toThrow();
+    const r = await runNode(project.id, { nodeId: "img" });
+    await settle(project.id);
+    const seq = db.insert(schema.sequences).values({ projectId: other.project.id, order: 0, title: { value: "S", origin: "validated" }, summary: { value: "", origin: "validated" } }).returning().get();
+    const shot = db.insert(schema.shots).values({ sequenceId: seq.id, order: 0, description: { value: "", origin: "validated" }, camera: { value: { scale: "wide", angle: "eye_level", movement: "static" }, origin: "validated" } }).returning().get();
+    expect(() => sendToShot(r.runs[0].id, shot.id)).toThrow(/autre projet/);
   });
 });

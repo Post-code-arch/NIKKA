@@ -8,7 +8,7 @@ import { formatUsd } from "@/lib/cost/estimate";
 import type { RunEstimate } from "@/lib/graph/run";
 import { api, ApiError } from "@/lib/store/api";
 
-export type RunRequest = { shotId: string; nodeId: string; variants?: number };
+export type RunRequest = { projectId: string; nodeId: string; variants?: number };
 
 /**
  * Every paid run goes through here: estimate first; above the threshold or
@@ -22,7 +22,7 @@ export function useRunner(onDone: () => void) {
   const launch = async (req: RunRequest, confirmedCostUsd?: number) => {
     setBusy(true);
     try {
-      await api(`/api/shots/${req.shotId}/run`, { body: { ...req, shotId: undefined, confirmedCostUsd } });
+      await api(`/api/projects/${req.projectId}/canvas/run`, { body: { ...req, projectId: undefined, confirmedCostUsd } });
       setPending(null);
       onDone();
     } catch (e) {
@@ -35,8 +35,8 @@ export function useRunner(onDone: () => void) {
   const run = async (req: RunRequest) => {
     setError(null);
     try {
-      const { estimate } = await api<{ estimate: RunEstimate }>(`/api/shots/${req.shotId}/run`, {
-        body: { ...req, shotId: undefined, estimateOnly: true },
+      const { estimate } = await api<{ estimate: RunEstimate }>(`/api/projects/${req.projectId}/canvas/run`, {
+        body: { ...req, projectId: undefined, estimateOnly: true },
       });
       if (estimate.needsConfirmation) setPending({ req, estimate });
       else await launch(req);
@@ -52,11 +52,11 @@ export function useRunner(onDone: () => void) {
           <h2 className="mb-3 text-sm font-medium">Confirmer la génération</h2>
           <div className="mb-3 space-y-1 rounded-md bg-surface-2 p-3 text-xs">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Prises</span>
+              <span className="text-muted-foreground">Variantes</span>
               <span className="font-mono">{pending.estimate.variants}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Par prise</span>
+              <span className="text-muted-foreground">Par variante</span>
               <span className="font-mono">{formatUsd(pending.estimate.unitCostUsd)}</span>
             </div>
             <div className="flex justify-between border-t pt-1">

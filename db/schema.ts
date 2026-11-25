@@ -35,6 +35,11 @@ export const projects = sqliteTable("projects", {
     .$type<ProjectSettings>()
     .notNull()
     .$defaultFn(() => ({ defaultModels: {} })),
+  /** The project's free node canvas (independent of sequences and shots). */
+  canvas: text("canvas", { mode: "json" })
+    .$type<{ nodes: unknown[]; edges: unknown[] }>()
+    .notNull()
+    .$defaultFn(() => ({ nodes: [], edges: [] })),
 });
 
 export const sequences = sqliteTable(
@@ -186,14 +191,16 @@ export const refGenerations = sqliteTable(
 );
 
 /**
- * Output of a generation node in a shot's free canvas. Canvas results stay in
- * the canvas until the user sends one to the shot, which creates a Take.
+ * Output of a generation node of the project canvas. Results stay in the
+ * canvas until the user sends one to a shot, which creates a Take there.
  */
 export const nodeRuns = sqliteTable(
   "node_runs",
   {
     id: id(),
-    shotId: text("shot_id").notNull().references(() => shots.id, { onDelete: "cascade" }),
+    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    /** Legacy: results made in a per-shot canvas before the project canvas. */
+    shotId: text("shot_id").references(() => shots.id, { onDelete: "set null" }),
     nodeId: text("node_id").notNull(),
     kind: text("kind").$type<"image" | "video">().notNull(),
     model: text("model").notNull(),
@@ -210,7 +217,7 @@ export const nodeRuns = sqliteTable(
     sentTakeId: text("sent_take_id"),
     createdAt: now("created_at"),
   },
-  (t) => [index("node_runs_shot_idx").on(t.shotId)],
+  (t) => [index("node_runs_project_idx").on(t.projectId)],
 );
 
 export type JobStatus = "active" | "completed" | "failed";

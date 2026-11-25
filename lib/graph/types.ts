@@ -1,25 +1,22 @@
 import { z } from "zod";
 
 /**
- * Shot sub-graph (PRD §9). A node = { type, typed inputs/outputs, params,
- * server executor }. V2 processing nodes (depth, mask, relight…) add entries
- * here without touching the engine.
+ * Project canvas: a free node graph, independent of sequences and shots.
+ * Six node types: three inputs (text, image, video) and three generators
+ * (text → image, text → video, image → video). New node types (V2: depth,
+ * mask, relight…) are added here without touching the engine.
  */
 
-export type PortType = "ref" | "views" | "text" | "image" | "video";
+export type PortType = "text" | "image" | "video";
 
 export const PORT_COLOR: Record<PortType, string> = {
-  ref: "var(--tag-character)",
-  views: "var(--tag-composition)",
   text: "var(--port-text)",
   image: "var(--port-image)",
   video: "var(--port-video)",
 };
 
 export const PORT_LABEL: Record<PortType, string> = {
-  ref: "références",
-  views: "vues",
-  text: "prompt",
+  text: "texte",
   image: "image",
   video: "vidéo",
 };
@@ -28,30 +25,17 @@ export interface PortSpec {
   id: string;
   type: PortType;
   label?: string;
-  /** Several edges may arrive on this input. */
-  multiple?: boolean;
-  optional?: boolean;
 }
 
-export type NodeType =
-  | "text"
-  | "imageInput"
-  | "reference"
-  | "refSelector"
-  | "promptBuilder"
-  | "imageGen"
-  | "imageEdit"
-  | "videoGen"
-  | "frameExtract"
-  | "take";
+export type NodeType = "text" | "image" | "video" | "textToImage" | "textToVideo" | "imageToVideo";
 
 export interface NodeSpec {
   label: string;
   description: string;
   inputs: PortSpec[];
   outputs: PortSpec[];
-  /** Generation nodes call a model and create takes. */
-  generates?: "keyframe" | "video";
+  /** Generators call a model of this kind and produce results. */
+  model?: "t2i" | "t2v" | "i2v";
 }
 
 export const NODE_SPECS: Record<NodeType, NodeSpec> = {
@@ -59,113 +43,66 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     label: "Texte",
     description: "Un prompt écrit à la main",
     inputs: [],
-    outputs: [{ id: "prompt", type: "text" }],
+    outputs: [{ id: "text", type: "text" }],
   },
-  imageInput: {
-    label: "Image importée",
-    description: "Une image de ton disque (photo, croquis, référence)",
+  image: {
+    label: "Image",
+    description: "Une image importée de ton disque",
     inputs: [],
     outputs: [{ id: "image", type: "image" }],
   },
-  reference: {
-    label: "Référence",
-    description: "Un personnage, un lieu, un objet ou un look (bible ou local)",
+  video: {
+    label: "Vidéo",
+    description: "Une vidéo importée de ton disque",
     inputs: [],
-    outputs: [{ id: "ref", type: "ref" }],
+    outputs: [{ id: "video", type: "video" }],
   },
-  refSelector: {
-    label: "Sélection des vues",
-    description: "Choisit les vues à envoyer selon l'échelle du plan",
-    inputs: [{ id: "refs", type: "ref", multiple: true }],
-    outputs: [{ id: "views", type: "views" }],
-  },
-  promptBuilder: {
-    label: "Prompt du plan",
-    description: "Descripteurs de la bible + action et caméra du plan + look",
-    inputs: [{ id: "refs", type: "ref", multiple: true, optional: true }],
-    outputs: [{ id: "prompt", type: "text" }],
-  },
-  imageGen: {
-    label: "Image · texte → image",
-    description: "Génère une image clé depuis le prompt",
-    inputs: [{ id: "prompt", type: "text" }],
+  textToImage: {
+    label: "Texte → image",
+    description: "Génère une image à partir d'un texte",
+    inputs: [{ id: "prompt", type: "text", label: "prompt" }],
     outputs: [{ id: "image", type: "image" }],
-    generates: "keyframe",
+    model: "t2i",
   },
-  imageEdit: {
-    label: "Image · édition multi-réf",
-    description: "Génère une image clé fidèle aux références",
-    inputs: [
-      { id: "prompt", type: "text" },
-      { id: "views", type: "views", optional: true },
-      { id: "images", type: "image", label: "images", multiple: true, optional: true },
-    ],
-    outputs: [{ id: "image", type: "image" }],
-    generates: "keyframe",
+  textToVideo: {
+    label: "Texte → vidéo",
+    description: "Génère une vidéo à partir d'un texte",
+    inputs: [{ id: "prompt", type: "text", label: "prompt" }],
+    outputs: [{ id: "video", type: "video" }],
+    model: "t2v",
   },
-  videoGen: {
-    label: "Vidéo · image → vidéo",
-    description: "Anime une image de départ",
+  imageToVideo: {
+    label: "Image → vidéo",
+    description: "Anime une image",
     inputs: [
-      { id: "start", type: "image", label: "image de départ" },
-      { id: "end", type: "image", label: "image de fin", optional: true },
-      { id: "prompt", type: "text" },
+      { id: "image", type: "image", label: "image de départ" },
+      { id: "prompt", type: "text", label: "prompt" },
     ],
     outputs: [{ id: "video", type: "video" }],
-    generates: "video",
-  },
-  frameExtract: {
-    label: "Extraction d'image",
-    description: "Dernière (ou première) image d'une vidéo",
-    inputs: [{ id: "video", type: "video", optional: true }],
-    outputs: [{ id: "image", type: "image" }],
-  },
-  take: {
-    label: "Prise du plan",
-    description: "La prise retenue du plan dans le storyboard",
-    inputs: [],
-    outputs: [{ id: "out", type: "image", label: "retenue" }],
+    model: "i2v",
   },
 };
 
-/** Take nodes carry image or video depending on the stage they collect. */
-export function portsOf(type: NodeType, data: GraphNodeData): { inputs: PortSpec[]; outputs: PortSpec[] } {
-  const spec = NODE_SPECS[type];
-  if (type === "take" && data.stage === "video") {
-    return { inputs: [], outputs: [{ id: "out", type: "video", label: "retenue" }] };
-  }
-  return spec;
-}
+export const NODE_ORDER: NodeType[] = ["text", "image", "video", "textToImage", "textToVideo", "imageToVideo"];
 
 export const GraphNodeDataSchema = z.looseObject({
   /** text */
   text: z.string().optional(),
-  /** imageInput */
+  /** image / video: the imported file */
   assetId: z.string().optional(),
-  /** generation nodes: the result passed downstream (default: latest completed). */
-  selectedRunId: z.string().optional(),
-  /** reference: the Reference row. */
-  referenceId: z.string().optional(),
-  /** generation nodes */
+  /** generators */
   modelId: z.string().optional(),
   seed: z.number().int().optional(),
   seedLocked: z.boolean().optional(),
-  /** refSelector: manual override of the automatic choice (asset ids). */
-  manualViews: z.array(z.string()).optional(),
-  /** promptBuilder: free text replacing the shot action (recipe « Libre »). */
-  override: z.string().optional(),
-  /** take: which stage it collects and the retained take. */
-  stage: z.enum(["sketch", "keyframe", "video"]).optional(),
-  takeId: z.string().optional(),
-  /** frameExtract */
-  source: z.enum(["input", "previous_shot"]).optional(),
-  which: z.enum(["last", "first"]).optional(),
+  durationSec: z.number().positive().max(60).optional(),
+  /** generators: the result passed downstream (default: latest completed). */
+  selectedRunId: z.string().optional(),
 });
 export type GraphNodeData = z.infer<typeof GraphNodeDataSchema>;
 
 export const GraphNodeSchema = z.object({
   id: z.string().min(1),
-  type: z.enum(["text", "imageInput", "reference", "refSelector", "promptBuilder", "imageGen", "imageEdit", "videoGen", "frameExtract", "take"]),
+  type: z.enum(["text", "image", "video", "textToImage", "textToVideo", "imageToVideo"]),
   position: z.object({ x: z.number(), y: z.number() }),
   data: GraphNodeDataSchema,
 });
@@ -180,34 +117,48 @@ export const GraphEdgeSchema = z.object({
 });
 export type GraphEdge = z.infer<typeof GraphEdgeSchema>;
 
-export const ShotGraphSchema = z.object({ nodes: z.array(GraphNodeSchema), edges: z.array(GraphEdgeSchema) });
-export type ShotGraphData = z.infer<typeof ShotGraphSchema>;
+export const CanvasGraphSchema = z.object({ nodes: z.array(GraphNodeSchema), edges: z.array(GraphEdgeSchema) });
+export type CanvasGraph = z.infer<typeof CanvasGraphSchema>;
 
-export function portType(graph: ShotGraphData, nodeId: string, handle: string, side: "in" | "out"): PortType | null {
+export function portType(graph: CanvasGraph, nodeId: string, handle: string, side: "in" | "out"): PortType | null {
   const node = graph.nodes.find((n) => n.id === nodeId);
   if (!node) return null;
-  const ports = portsOf(node.type, node.data);
-  return (side === "in" ? ports.inputs : ports.outputs).find((p) => p.id === handle)?.type ?? null;
+  const spec = NODE_SPECS[node.type];
+  return (side === "in" ? spec.inputs : spec.outputs).find((p) => p.id === handle)?.type ?? null;
 }
 
-/** An edge is valid when both ports exist and carry the same type. */
-export function isValidEdge(graph: ShotGraphData, e: Pick<GraphEdge, "source" | "sourceHandle" | "target" | "targetHandle">) {
+/** A link is valid when both ports exist and carry the same type. */
+export function isValidEdge(graph: CanvasGraph, e: Pick<GraphEdge, "source" | "sourceHandle" | "target" | "targetHandle">) {
   if (e.source === e.target) return false;
   const out = portType(graph, e.source, e.sourceHandle, "out");
   const inp = portType(graph, e.target, e.targetHandle, "in");
   return !!out && out === inp;
 }
 
-export function incoming(graph: ShotGraphData, nodeId: string, handle: string): GraphNode[] {
+export function incoming(graph: CanvasGraph, nodeId: string, handle: string): GraphNode[] {
   return graph.edges
     .filter((e) => e.target === nodeId && e.targetHandle === handle)
     .map((e) => graph.nodes.find((n) => n.id === e.source))
     .filter((n): n is GraphNode => !!n);
 }
 
-export function outgoing(graph: ShotGraphData, nodeId: string): GraphNode[] {
-  return graph.edges
-    .filter((e) => e.source === nodeId)
-    .map((e) => graph.nodes.find((n) => n.id === e.target))
-    .filter((n): n is GraphNode => !!n);
+export function uniqueId(nodes: { id: string }[], type: NodeType): string {
+  let i = nodes.length + 1;
+  while (nodes.some((n) => n.id === `${type}-${i}`)) i++;
+  return `${type}-${i}`;
+}
+
+/** Keeps only what the current node set understands (older canvases may hold other nodes). */
+export function sanitizeGraph(input: unknown): CanvasGraph {
+  const raw = (input ?? {}) as { nodes?: unknown[]; edges?: unknown[] };
+  const nodes = (raw.nodes ?? []).flatMap((n) => {
+    const p = GraphNodeSchema.safeParse(n);
+    return p.success ? [p.data] : [];
+  });
+  const graph: CanvasGraph = { nodes, edges: [] };
+  graph.edges = (raw.edges ?? []).flatMap((e) => {
+    const p = GraphEdgeSchema.safeParse(e);
+    return p.success && isValidEdge(graph, p.data) ? [p.data] : [];
+  });
+  return graph;
 }

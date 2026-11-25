@@ -33,6 +33,22 @@ export const MOCK_MODELS: ModelEntry[] = [
     }),
   },
   {
+    id: "mock/text-to-video",
+    label: "Mock · texte → vidéo",
+    kind: "t2v",
+    durations: [5, 10],
+    supportsSeed: true,
+    pricing: { unit: "second", usd: 0.015 },
+    tier: "draft",
+    endpoint: "generateVideo",
+    mock: true,
+    mapInputs: (g) => ({
+      prompt: g.prompt,
+      duration: g.durationSec && g.durationSec > 5 ? 10 : 5,
+      ...(g.seed !== undefined ? { seed: g.seed } : {}),
+    }),
+  },
+  {
     id: "mock/image-to-video",
     label: "Mock · image → vidéo",
     kind: "i2v",

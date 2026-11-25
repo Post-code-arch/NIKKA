@@ -234,7 +234,7 @@ function completeNodeRun(job: Job, runId: string, assetIds: string[], attempts: 
     for (const assetId of assetIds.slice(1)) {
       tx.insert(schema.nodeRuns)
         .values({
-          shotId: run.shotId,
+          projectId: run.projectId,
           nodeId: run.nodeId,
           kind: run.kind,
           model: run.model,
