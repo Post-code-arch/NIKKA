@@ -24,7 +24,9 @@ export function CanvasView() {
       </div>
     );
   }
-  const seqIndex = Math.max(0, project.sequences.findIndex((s) => s.id === canvasSequenceId));
+  // Remembered sequence, else the first one that has shots.
+  const remembered = project.sequences.findIndex((s) => s.id === canvasSequenceId);
+  const seqIndex = remembered >= 0 ? remembered : Math.max(0, project.sequences.findIndex((s) => s.shots.length > 0));
   const sequence = project.sequences[seqIndex];
   const openShot = project.sequences.flatMap((s, i) => s.shots.map((sh, j) => ({ sh, number: `${i + 1}.${j + 1}` }))).find((x) => x.sh.id === openShotId);
   const shots = project.sequences.flatMap((s) => s.shots);
@@ -51,6 +53,7 @@ export function CanvasView() {
               {project.sequences.map((s, i) => (
                 <Pill key={s.id} active={s.id === sequence?.id} onClick={() => setCanvas({ canvasSequenceId: s.id })}>
                   <span className="font-mono">{i + 1}</span> {s.title.value}
+                  <span className="font-mono text-muted-foreground">{s.shots.length}</span>
                 </Pill>
               ))}
               {sequence && (

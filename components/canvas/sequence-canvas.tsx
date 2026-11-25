@@ -2,7 +2,7 @@
 
 import "@xyflow/react/dist/style.css";
 import { createContext, useContext, useMemo, useState } from "react";
-import { Background, BackgroundVariant, ReactFlow, useReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
+import { Background, BackgroundVariant, Handle, Position, ReactFlow, useReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
 import { Clapperboard, Crosshair, Film, Grid2x2, Maximize2, Minus, Plus, Sparkles } from "lucide-react";
 import { MovementIcon, ScaleIcon } from "@/components/camera/icons";
 import { Thumb } from "@/components/bible/view-thumb";
@@ -46,6 +46,7 @@ function ShotBlock({ data }: NodeProps<Node<BlockData>>) {
 
   return (
     <div
+      className="relative"
       onDoubleClick={() => ctx.open(shot.id)}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes(NIKKA_REF_MIME)) {
@@ -64,6 +65,9 @@ function ShotBlock({ data }: NodeProps<Node<BlockData>>) {
         }
       }}
     >
+      {/* Anchors for the sequence links (not connectable). */}
+      <Handle type="target" position={Position.Left} isConnectable={false} className="!opacity-0" style={{ top: "40%" }} />
+      <Handle type="source" position={Position.Right} isConnectable={false} className="!opacity-0" style={{ top: "40%" }} />
       <NodeCard
         title={`Plan ${number} · ${recipe}`}
         width={300}
@@ -197,8 +201,19 @@ export function SequenceCanvas({
           <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="rgba(255,255,255,0.07)" />
         </ReactFlow>
         {sequence.shots.length === 0 && (
-          <div className="pointer-events-none absolute inset-0 grid place-items-center text-xs text-muted-foreground">
-            Aucun plan dans cette séquence.
+          <div className="absolute inset-0 grid place-items-center">
+            <div className="island w-80 p-4 text-center">
+              <p className="mb-1 text-sm">{sequence.title.value} n&apos;a pas encore de plan</p>
+              <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">
+                Ajoute un plan ici, ou choisis une autre séquence dans la barre du haut. Chaque plan apparaîtra comme un bloc ; double-clic pour déplier ses nodes.
+              </p>
+              <Pill
+                className="mx-auto bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
+                onClick={() => void api(`/api/sequences/${sequence.id}/shots`, { body: {} }).then(() => refresh())}
+              >
+                <Plus /> Ajouter un plan
+              </Pill>
+            </div>
           </div>
         )}
         <Island className="absolute top-1/2 right-4 z-10 -translate-y-1/2 flex-col">
