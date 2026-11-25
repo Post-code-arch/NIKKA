@@ -98,6 +98,10 @@ if [ -d "$HOME/Desktop" ] && [ ! -e "$SHORTCUT" ]; then
   printf '#!/bin/bash\nexec "$HOME/NIKKA/NIKKA.command"\n' > "$SHORTCUT" && chmod +x "$SHORTCUT" \
     && echo "• Raccourci « NIKKA » ajouté sur le Bureau ✓"
 fi
+# Emblem as the shortcut's icon (macOS; skipped silently if it fails)
+if [ -e "$SHORTCUT" ] && [ -f "$DIR/public/nikka-icon.png" ]; then
+  osascript -l JavaScript -e "ObjC.import('AppKit'); \$.NSWorkspace.sharedWorkspace.setIconForFileOptions(\$.NSImage.alloc.initWithContentsOfFile('$DIR/public/nikka-icon.png'), '$SHORTCUT', 0)" >/dev/null 2>&1 || true
+fi
 
 # 7. Start
 echo "• Lancement…"

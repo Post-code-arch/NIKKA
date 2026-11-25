@@ -39,6 +39,11 @@ if command -v git >/dev/null 2>&1 && [ -d .git ]; then
   fi
 fi
 
+# Emblem as the Desktop shortcut's icon (silently skipped if it fails).
+if [ -e "$HOME/Desktop/NIKKA.command" ] && [ -f public/nikka-icon.png ]; then
+  osascript -l JavaScript -e "ObjC.import('AppKit'); \$.NSWorkspace.sharedWorkspace.setIconForFileOptions(\$.NSImage.alloc.initWithContentsOfFile('$PWD/public/nikka-icon.png'), '$HOME/Desktop/NIKKA.command', 0)" >/dev/null 2>&1 || true
+fi
+
 # Already running?
 if curl -s -o /dev/null "$URL"; then
   if [ "$UPDATED" = 0 ]; then
