@@ -364,18 +364,34 @@ const GROUP: Record<NodeType, string> = {
   imageToVideo: "Génération",
 };
 
-export function NodePalette({ x, y, onPick, onClose }: { x: number; y: number; onPick: (type: NodeType) => void; onClose: () => void }) {
+export function NodePalette({
+  x,
+  y,
+  onPick,
+  onClose,
+  types = NODE_ORDER,
+  title = "Ajouter un node",
+}: {
+  x: number;
+  y: number;
+  onPick: (type: NodeType) => void;
+  onClose: () => void;
+  /** Only these node types (e.g. those that can take a dragged link). */
+  types?: NodeType[];
+  title?: string;
+}) {
   return (
     <div className="island absolute z-30 w-60 p-1.5" style={{ left: x, top: y }} onMouseDown={(e) => e.stopPropagation()}>
       <div className="mb-1 flex items-center justify-between px-1.5 text-[11px] text-muted-foreground">
-        Ajouter un node
+        {title}
         <IconPill aria-label="Fermer" className="size-6 bg-transparent" onClick={onClose}>
           <X />
         </IconPill>
       </div>
-      {NODE_ORDER.map((type, i) => (
+      {types.length === 0 && <p className="px-2 py-1 text-[10px] text-muted-foreground">Aucun node ne prend ce type de lien.</p>}
+      {types.map((type, i) => (
         <div key={type}>
-          {(i === 0 || GROUP[NODE_ORDER[i - 1]] !== GROUP[type]) && (
+          {(i === 0 || GROUP[types[i - 1]] !== GROUP[type]) && (
             <div className="mt-1 px-2 pt-1 text-[9px] tracking-wide text-muted-foreground/70 uppercase">{GROUP[type]}</div>
           )}
           <button type="button" onClick={() => onPick(type)} className="block w-full rounded-md px-2 py-1.5 text-left hover:bg-surface-2">

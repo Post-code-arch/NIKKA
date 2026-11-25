@@ -11,6 +11,7 @@ import {
   useNodesState,
   useReactFlow,
   type Connection,
+  type FinalConnectionState,
   type Edge,
   type Node,
 } from "@xyflow/react";
@@ -18,7 +19,19 @@ import { Crosshair, Grid2x2, Minus, Plus } from "lucide-react";
 import { GradientEdge } from "@/components/nodes/gradient-edge";
 import { IconPill, Island, Pill } from "@/components/ui/pill";
 import type { NodeRun } from "@/db/schema";
-import { NODE_SPECS, PORT_COLOR, isValidEdge, portType, uniqueId, type CanvasGraph, type GraphNodeData, type NodeType } from "@/lib/graph/types";
+import {
+  NODE_ORDER,
+  NODE_SPECS,
+  PORT_COLOR,
+  isValidEdge,
+  portType,
+  uniqueId,
+  type CanvasGraph,
+  type GraphEdge,
+  type GraphNodeData,
+  type NodeType,
+  type PortType,
+} from "@/lib/graph/types";
 import type { ProjectTree } from "@/lib/projects/queries";
 import { api } from "@/lib/store/api";
 import { useModels } from "@/lib/store/models";
@@ -33,6 +46,14 @@ const FIT = { padding: { top: "90px", bottom: "40px", left: "40px", right: "80px
 
 type RfNode = Node<GraphNodeData, NodeType>;
 type CanvasResponse = { graph: CanvasGraph; runs: NodeRun[] };
+/** A link dragged from a port and dropped on empty space: the new node gets linked to it. */
+type PendingLink = { nodeId: string; handleId: string; side: "source" | "target"; type: PortType };
+
+/** First port of the new node that can take the dragged link (inputs if dragged from an output). */
+function matchingPort(type: NodeType, link: PendingLink) {
+  const ports = link.side === "source" ? NODE_SPECS[type].inputs : NODE_SPECS[type].outputs;
+  return ports.find((p) => p.type === link.type);
+}
 
 function edgeColor(graph: CanvasGraph, e: { source: string; sourceHandle: string }) {
   const t = portType(graph, e.source, e.sourceHandle, "out");
@@ -88,7 +109,7 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [runs, setRuns] = useState<NodeRun[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [palette, setPalette] = useState<{ x: number; y: number; flow: { x: number; y: number } } | null>(null);
+  const [palette, setPalette] = useState<{ x: number; y: number; flow: { x: number; y: number }; link?: PendingLink } | null>(null);
   const wrapper = useRef<HTMLDivElement>(null);
   const latest = useRef({ nodes, edges });
   useEffect(() => {
@@ -148,39 +169,67 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
     [setNodes, save],
   );
 
-  const onConnect = (c: Connection) => {
-    if (!c.sourceHandle || !c.targetHandle) return;
-    const graph = graphNow();
-    const conn = { source: c.source, sourceHandle: c.sourceHandle, target: c.target, targetHandle: c.targetHandle };
-    if (!isValidEdge(graph, conn)) return;
-    // Several texts may feed one prompt (joined); any other input takes a single link.
-    const multiple = c.targetHandle === "prompt";
-    const id = `e-${c.source}-${c.sourceHandle}-${c.target}-${c.targetHandle}`;
+  /** Adds a link; several texts may feed one prompt (joined), any other input takes a single link. */
+  const link = (graph: CanvasGraph, conn: Omit<GraphEdge, "id">) => {
+    if (!isValidEdge(graph, conn)) return false;
+    const multiple = conn.targetHandle === "prompt";
+    const id = `e-${conn.source}-${conn.sourceHandle}-${conn.target}-${conn.targetHandle}`;
     setEdges((es) => [
-      ...es.filter((e) => e.id !== id && (multiple || !(e.target === c.target && e.targetHandle === c.targetHandle))),
+      ...es.filter((e) => e.id !== id && (multiple || !(e.target === conn.target && e.targetHandle === conn.targetHandle))),
       { ...conn, id, type: "gradient", data: { from: edgeColor(graph, conn) } },
     ]);
-    setTimeout(() => save(true), 30);
+    return true;
   };
 
-  const addNode = (type: NodeType, at: { x: number; y: number }) => {
+  const onConnect = (c: Connection) => {
+    if (!c.sourceHandle || !c.targetHandle) return;
+    if (link(graphNow(), { source: c.source, sourceHandle: c.sourceHandle, target: c.target, targetHandle: c.targetHandle })) {
+      setTimeout(() => save(true), 30);
+    }
+  };
+
+  const addNode = (type: NodeType, at: { x: number; y: number }, from?: PendingLink) => {
     const id = uniqueId(latest.current.nodes, type);
     const kind = NODE_SPECS[type].model;
     const modelId = kind ? models.find((m) => m.kind === kind)?.id : undefined;
     const data: GraphNodeData = type === "text" ? { text: "" } : modelId ? { modelId } : {};
-    setNodes((ns) => [...ns, { id, type, position: at, data }]);
+    // Dropped from an output: the node sits to the right of the cursor; from an input: to the left.
+    const position = from?.side === "target" ? { x: at.x - 280, y: at.y - 30 } : from ? { x: at.x, y: at.y - 30 } : at;
+    setNodes((ns) => [...ns, { id, type, position, data }]);
+    const port = from && matchingPort(type, from);
+    if (from && port) {
+      const graph = graphNow();
+      graph.nodes.push({ id, type, position, data });
+      link(
+        graph,
+        from.side === "source"
+          ? { source: from.nodeId, sourceHandle: from.handleId, target: id, targetHandle: port.id }
+          : { source: id, sourceHandle: port.id, target: from.nodeId, targetHandle: from.handleId },
+      );
+    }
     setPalette(null);
     setTimeout(() => save(true), 30);
   };
 
-  const openPalette = (clientX: number, clientY: number) => {
+  const openPalette = (clientX: number, clientY: number, from?: PendingLink) => {
     const box = wrapper.current?.getBoundingClientRect();
     if (!box) return;
     setPalette({
       x: Math.max(8, Math.min(clientX - box.left, box.width - 250)),
       y: Math.max(8, Math.min(clientY - box.top, box.height - 380)),
       flow: rf.screenToFlowPosition({ x: clientX, y: clientY }),
+      link: from,
     });
+  };
+
+  /** A link dropped on empty space proposes the nodes that can take it. */
+  const onConnectEnd = (event: MouseEvent | TouchEvent, state: FinalConnectionState) => {
+    if (state.isValid || state.toHandle || !state.fromHandle?.id || !state.fromNode) return;
+    const side = state.fromHandle.type;
+    const type = portType(graphNow(), state.fromNode.id, state.fromHandle.id, side === "source" ? "out" : "in");
+    if (!type) return;
+    const point = "changedTouches" in event ? event.changedTouches[0] : event;
+    openPalette(point.clientX, point.clientY, { nodeId: state.fromNode.id, handleId: state.fromHandle.id, side, type });
   };
 
   const ctx = {
@@ -220,6 +269,7 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onConnectEnd={onConnectEnd}
             onNodeDragStop={() => save()}
             onNodesDelete={() => setTimeout(() => save(true), 30)}
             onEdgesDelete={() => setTimeout(() => save(true), 30)}
@@ -286,7 +336,16 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
           </IconPill>
         </Island>
 
-        {palette && <NodePalette x={palette.x} y={palette.y} onClose={() => setPalette(null)} onPick={(type) => addNode(type, palette.flow)} />}
+        {palette && (
+          <NodePalette
+            x={palette.x}
+            y={palette.y}
+            types={palette.link ? NODE_ORDER.filter((t) => matchingPort(t, palette.link!)) : undefined}
+            title={palette.link ? (palette.link.side === "source" ? "Brancher la sortie sur…" : "Alimenter l'entrée avec…") : undefined}
+            onClose={() => setPalette(null)}
+            onPick={(type) => addNode(type, palette.flow, palette.link)}
+          />
+        )}
         {dialog}
       </div>
     </GraphContext.Provider>
