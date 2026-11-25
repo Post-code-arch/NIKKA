@@ -100,7 +100,13 @@ export function ShotInspector({ project }: { project: ProjectTree }) {
     const q = new URLSearchParams();
     if (keyframe) q.set("keyframe", keyframe);
     if (video) q.set("video", video);
-    void api<ShotPromptPreview>(`/api/shots/${shot.id}/prompt?${q}`).then(setPreview);
+    let stale = false;
+    void api<ShotPromptPreview>(`/api/shots/${shot.id}/prompt?${q}`).then((p) => {
+      if (!stale) setPreview(p);
+    });
+    return () => {
+      stale = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewKey]);
 

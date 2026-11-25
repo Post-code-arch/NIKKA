@@ -36,7 +36,6 @@ export const ShotUpdate = z.object({
   durationSec: z.number().positive().max(120).optional(),
   camera: fieldSchema(CameraAttrsSchema).optional(),
   recipeId: z.string().optional(),
-  graph: z.object({ nodes: z.array(z.unknown()), edges: z.array(z.unknown()) }).optional(),
   refIds: z.array(z.string()).optional(),
   framing: z.record(z.string(), z.enum(["left", "center", "right"])).nullable().optional(),
   selectedTakeId: z.string().nullable().optional(),
@@ -92,3 +91,13 @@ export const SelectPreviewRequest = z.object({
   angle: z.enum(["eye_level", "high", "low", "overhead", "dutch"]).default("eye_level"),
   maxSlots: z.number().int().min(1).max(30),
 });
+
+export const RecipeRequest = z.object({ recipeId: z.enum(["character", "location", "object", "continuity", "free"]) });
+export const RunRequest = z.object({
+  nodeId: z.string().optional(),
+  until: z.enum(["keyframe", "video"]).optional(),
+  variants: z.number().int().min(1).max(8).optional(),
+  confirmedCostUsd: z.number().nonnegative().optional(),
+  estimateOnly: z.boolean().optional(),
+});
+export const SelectTakeRequest = z.object({ takeId: z.string().min(1), nodeId: z.string().optional() });

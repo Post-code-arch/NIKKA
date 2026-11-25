@@ -91,6 +91,8 @@ export const takes = sqliteTable(
     stage: text("stage").$type<TakeStage>().notNull(),
     assetId: text("asset_id").references(() => assets.id),
     parentTakeId: text("parent_take_id"),
+    /** Canvas node that produced this take (generation node id in the shot graph). */
+    nodeId: text("node_id"),
     model: text("model").notNull(),
     prompt: text("prompt").notNull(),
     params: text("params", { mode: "json" }).$type<Record<string, unknown>>().notNull(),

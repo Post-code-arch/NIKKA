@@ -29,6 +29,12 @@ export interface CreateTakeInput {
   durationSec?: number;
   /** For video: the keyframe take used as start image. */
   parentTakeId?: string;
+  /** Start image given directly (e.g. a frame extracted from the previous shot). */
+  startAssetId?: string;
+  /** Reference images chosen upstream (canvas RefSelector). Default: automatic selection. */
+  referenceAssetIds?: string[];
+  /** Canvas node that launched it. */
+  nodeId?: string;
   /** Set once the user saw the estimate and confirmed it. */
   confirmedCostUsd?: number;
 }
@@ -88,25 +94,29 @@ export async function createTake(input: CreateTakeInput): Promise<Take> {
 
   if (model.kind === "i2i") {
     // Multi-reference keyframe: send the views chosen for this shot's scale (PRD §7).
-    const picked = shotPromptPreview(input.shotId, { keyframe: model.id })?.references?.picked ?? [];
-    if (picked.length === 0) {
+    const assetIds =
+      input.referenceAssetIds ??
+      (shotPromptPreview(input.shotId, { keyframe: model.id })?.references?.picked ?? []).map((p) => p.assetId);
+    if (assetIds.length === 0) {
       throw new GenerationError("Ce modèle a besoin d'images de référence : branche une référence de la bible avec des vues", 400);
     }
     const urls: string[] = [];
-    for (const p of picked) {
-      const asset = db.select().from(schema.assets).where(eq(schema.assets.id, p.assetId)).get();
+    for (const id of assetIds.slice(0, model.maxReferenceImages ?? assetIds.length)) {
+      const asset = db.select().from(schema.assets).where(eq(schema.assets.id, id)).get();
       if (asset) urls.push(await uploadMedia(path.resolve(asset.path)));
     }
     generic.referenceImageUrls = urls;
   }
 
   if (model.kind === "i2v") {
-    if (!input.parentTakeId) throw new GenerationError("Une image de départ (prise parente) est requise", 400);
-    const parent = db.select().from(schema.takes).where(eq(schema.takes.id, input.parentTakeId)).get();
-    const asset = parent?.assetId
-      ? db.select().from(schema.assets).where(eq(schema.assets.id, parent.assetId)).get()
-      : undefined;
-    if (!asset || asset.kind !== "image") throw new GenerationError("La prise parente n'a pas d'image", 400);
+    let startId = input.startAssetId;
+    if (!startId) {
+      if (!input.parentTakeId) throw new GenerationError("Une image de départ (prise parente) est requise", 400);
+      const parent = db.select().from(schema.takes).where(eq(schema.takes.id, input.parentTakeId)).get();
+      startId = parent?.assetId ?? undefined;
+    }
+    const asset = startId ? db.select().from(schema.assets).where(eq(schema.assets.id, startId)).get() : undefined;
+    if (!asset || asset.kind !== "image") throw new GenerationError("Il manque l'image de départ", 400);
     // The local file is the source of truth: re-upload it for a fresh temporary URL.
     generic.startImageUrl = await uploadMedia(path.resolve(asset.path));
   }
@@ -118,6 +128,7 @@ export async function createTake(input: CreateTakeInput): Promise<Take> {
       shotId: input.shotId,
       stage: input.stage,
       parentTakeId: input.parentTakeId,
+      nodeId: input.nodeId,
       model: model.id,
       prompt: input.prompt,
       params: body,

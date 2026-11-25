@@ -1,0 +1,1 @@
+ALTER TABLE `takes` ADD `node_id` text;

@@ -53,6 +53,16 @@ Clique sur une carte de plan pour ouvrir sa **fiche** à droite :
 
 « Image clé » et « Animer » partent de ce prompt assemblé, qui reste modifiable avant le lancement.
 
+### Canvas et recettes (phase 4)
+
+Onglet **Canvas** :
+- **Vue séquence** : chaque plan est une recette repliée en un bloc (image retenue, références, pictos caméra). Boutons **Image clé**, **×4** (4 variantes, avec confirmation du total) et **Animer**. Glisse une référence de la bible sur un bloc pour la brancher.
+- **Double-clic sur un plan** (ou ⤢) : la recette se déplie en nodes — Référence, Sélection des vues, Prompt, Image (texte → image ou édition multi-réf), Vidéo, Extraction d'image, Prise. Les ports sont typés et colorés ; un lien entre types différents est refusé.
+- **+ Node** ou **double-clic sur le fond** : ajoute un node. **Suppr** efface. Les positions et les liens sont enregistrés.
+- Recettes : Plan personnage, Plan lieu / ambiance, Plan objet / produit, Continuité (part de la dernière image du plan précédent), Libre.
+- Sur chaque node de génération : modèle, seed avec verrou, variantes, coût estimé et état des prises. Le node Prise montre toutes les prises : un clic retient celle qui part en animation.
+- Une référence locale peut être promue avec **Ajouter à la bible**.
+
 ## Organisation
 
 - `lib/atlas` — client Atlas côté serveur uniquement : upload, génération, polling (backoff + timeout), téléchargement dans `storage/assets/<sha256>.<ext>`, catalogue et schémas d'entrée des modèles, LLM (SDK `openai`), mode mock.
@@ -61,6 +71,8 @@ Clique sur une carte de plan pour ouvrir sa **fiche** à droite :
 - `lib/generation`, `lib/jobs` — création des prises (jamais d'écrasement, coût confirmé au-dessus du seuil) et poller serveur qui télécharge les sorties dès la complétion.
 - `lib/camera` — vocabulaire caméra : libellés FR, formulation anglaise par valeur, surcharges et capacités par modèle (`phrasing.ts`).
 - `lib/prompt` — assemblage du prompt d'un plan (`build.ts`) et aperçu par étape (`shot.ts`).
+- `lib/graph` — types de nodes et de ports (`types.ts`), moteur d'exécution serveur du graphe d'un plan (`run.ts`).
+- `lib/recipes` — recettes (sous-graphes prédéfinis) et synchronisation des références.
 - `lib/refs` — sélection automatique des vues selon l'échelle du plan (`select.ts`, testé), assistant de pack (`pack.ts`), libellés des vues.
 - `app/api` — routes CRUD projets / séquences / plans / références, génération, `/api/jobs`, `/api/assets/:id`.
 - `storage/assets`, `data` — médias et base locale (non versionnés).

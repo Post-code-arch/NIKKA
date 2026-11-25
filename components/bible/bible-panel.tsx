@@ -126,6 +126,12 @@ export function BiblePanel() {
                     <button
                       key={r.id}
                       type="button"
+                      draggable
+                      title="Glisse sur un plan du Canvas pour la brancher"
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("application/nikka-ref", r.id);
+                        e.dataTransfer.effectAllowed = "link";
+                      }}
                       onClick={() => setDetailId(r.id)}
                       className="mb-1 flex w-full items-center gap-2 rounded-md p-1 text-left hover:bg-surface-2"
                     >
