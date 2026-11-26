@@ -140,7 +140,7 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     label: "Vidéo → vidéo",
     description: "Transforme une vidéo (style, décor, éléments) en gardant son mouvement",
     inputs: [
-      { id: "video", type: "video", label: "vidéo source" },
+      { id: "source", type: "video", label: "vidéo source" },
       { id: "prompt", type: "text", label: "prompt", multiple: true },
       { id: "refs", type: "image", label: "références", multiple: true, optional: true },
       { id: "negative", type: "negative", label: "négatif", optional: true },

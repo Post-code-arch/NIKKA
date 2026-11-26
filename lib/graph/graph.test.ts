@@ -249,7 +249,7 @@ describe("project canvas (mock)", () => {
         node("vv", "videoToVideo"),
       ],
       edges: [
-        { id: "e1", source: "v", sourceHandle: "video", target: "vv", targetHandle: "video" },
+        { id: "e1", source: "v", sourceHandle: "video", target: "vv", targetHandle: "source" },
         { id: "e2", source: "t", sourceHandle: "text", target: "vv", targetHandle: "prompt" },
         { id: "e3", source: "f", sourceHandle: "image", target: "vv", targetHandle: "refs" },
         { id: "e4", source: "n", sourceHandle: "negative", target: "vv", targetHandle: "negative" },
@@ -263,7 +263,7 @@ describe("project canvas (mock)", () => {
     expect(r.runs[0].params.negative_prompt).toBe("flou");
     // An image cannot be a video source (ports refuse it; the engine double-checks).
     const g: CanvasGraph = { nodes: [node("f", "image"), node("vv", "videoToVideo")], edges: [] };
-    expect(isValidEdge(g, { source: "f", sourceHandle: "image", target: "vv", targetHandle: "video" })).toBe(false);
+    expect(isValidEdge(g, { source: "f", sourceHandle: "image", target: "vv", targetHandle: "source" })).toBe(false);
   });
 
   it("a negative output cannot be wired into a prompt", () => {

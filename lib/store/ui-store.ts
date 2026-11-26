@@ -10,6 +10,9 @@ export type StoryboardFilters = { status?: ShotStatus; characterId?: string; loc
 export const useUiStore = create<{
   bibleOpen: boolean;
   setBibleOpen: (open: boolean) => void;
+  /** Canvas: the node library panel on the left. */
+  nodePanelOpen: boolean;
+  setNodePanelOpen: (open: boolean) => void;
   selectedShotId: string | null;
   selectShot: (id: string | null) => void;
   /** Storyboard: board (grid) or timeline (real durations). */
@@ -26,6 +29,8 @@ export const useUiStore = create<{
     (set) => ({
       bibleOpen: true,
       setBibleOpen: (bibleOpen) => set({ bibleOpen }),
+      nodePanelOpen: true,
+      setNodePanelOpen: (nodePanelOpen) => set({ nodePanelOpen }),
       selectedShotId: null,
       selectShot: (selectedShotId) => set({ selectedShotId }),
       storyboardView: "board",
@@ -36,6 +41,6 @@ export const useUiStore = create<{
       togglePicked: (id) => set((s) => ({ picked: s.picked.includes(id) ? s.picked.filter((x) => x !== id) : [...s.picked, id] })),
       setPicked: (picked) => set({ picked }),
     }),
-    { name: "nikka-ui", partialize: (s) => ({ bibleOpen: s.bibleOpen, storyboardView: s.storyboardView }) },
+    { name: "nikka-ui", partialize: (s) => ({ bibleOpen: s.bibleOpen, storyboardView: s.storyboardView, nodePanelOpen: s.nodePanelOpen }) },
   ),
 );

@@ -522,7 +522,7 @@ export const graphNodeTypes = {
 
 // --- Palette ---------------------------------------------------------------------------
 
-const GROUP: Record<NodeType, string> = {
+export const GROUP: Record<NodeType, string> = {
   text: "Entrées",
   image: "Entrées",
   video: "Entrées",

@@ -221,7 +221,7 @@ export async function runNode(projectId: string, opts: RunOptions): Promise<{ es
 
   // Video → video: the source video (an imported video or a generated one).
   if (node.type === "videoToVideo") {
-    const sourceId = wired("video").flatMap((n) => assetsOf(n, runs))[0];
+    const sourceId = wired("source").flatMap((n) => assetsOf(n, runs))[0];
     if (!sourceId) throw new GenerationError("Il faut une vidéo source : branche un node Vidéo ou une vidéo générée", 400);
     const src = getDb().select().from(schema.assets).where(eq(schema.assets.id, sourceId)).get();
     if (src?.kind !== "video") throw new GenerationError("L'entrée « vidéo source » doit recevoir une vidéo", 400);
