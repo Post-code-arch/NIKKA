@@ -1,5 +1,6 @@
 import { and, eq, lte } from "drizzle-orm";
 import { getDb, schema } from "@/db";
+import { recordObservedPrice } from "@/lib/models/store";
 import type { Job } from "@/db/schema";
 import {
   downloadToAssets,
@@ -146,9 +147,23 @@ async function pollJob(job: Job): Promise<void> {
   // Atlas reports the billed price of the prediction: the real cost, when given.
   const billed = Number(data.price);
   const actualUsd = Number.isFinite(billed) && billed >= 0 && !mock ? billed : undefined;
+  if (actualUsd !== undefined) learnPrice(job, actualUsd);
   if (job.takeId) completeTake(job, job.takeId, assetIds, attempts, actualUsd);
   else if (job.refGenerationId) completeRefGeneration(job, job.refGenerationId, assetIds, attempts, actualUsd);
   else if (job.nodeRunId) completeNodeRun(job, job.nodeRunId, assetIds, attempts, actualUsd);
+}
+
+/** The first real bill of a model corrects its unit price for every later estimate. */
+function learnPrice(job: Job, billedUsd: number) {
+  const db = getDb();
+  const row = job.takeId
+    ? db.select().from(schema.takes).where(eq(schema.takes.id, job.takeId)).get()
+    : job.nodeRunId
+      ? db.select().from(schema.nodeRuns).where(eq(schema.nodeRuns.id, job.nodeRunId)).get()
+      : job.refGenerationId
+        ? db.select().from(schema.refGenerations).where(eq(schema.refGenerations.id, job.refGenerationId)).get()
+        : undefined;
+  if (row) recordObservedPrice(row.model, row.costEstimatedUsd, billedUsd);
 }
 
 function markJobDone(tx: Pick<ReturnType<typeof getDb>, "update">, job: Job, attempts: number) {
