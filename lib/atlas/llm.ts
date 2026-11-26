@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { assertUnderCap, recordLlmSpend } from "./budget";
 import { ATLAS_LLM_BASE, assertServer, getApiKey, isMockMode } from "./config";
 import { ensureProxy, parseOrThrow } from "./http";
 import { ChatCompletionSchema } from "./schemas";
@@ -45,6 +46,7 @@ export async function chat(messages: ChatMessage[], opts: ChatOptions = {}): Pro
   }
   await ensureProxy();
   const model = opts.model ?? (await defaultLlmModel());
+  await assertUnderCap(`LLM ${model}`);
   const raw = await getLlmClient().chat.completions.create({
     model,
     messages,
@@ -53,6 +55,12 @@ export async function chat(messages: ChatMessage[], opts: ChatOptions = {}): Pro
     ...(opts.json ? { response_format: { type: "json_object" as const } } : {}),
   });
   const res = parseOrThrow(ChatCompletionSchema, raw, "chat.completions");
+  // Log what this call cost (catalog token prices) for the spending cap.
+  const { resolveLlm } = await import("@/lib/models/registry");
+  const price = resolveLlm(model);
+  const pin = res.usage?.prompt_tokens ?? 0;
+  const pout = res.usage?.completion_tokens ?? 0;
+  recordLlmSpend({ model, promptTokens: pin, completionTokens: pout, usd: ((price?.inputUsdPerM ?? 1) * pin + (price?.outputUsdPerM ?? 4) * pout) / 1e6 });
   return {
     text: res.choices[0].message.content ?? "",
     model: res.model ?? model,

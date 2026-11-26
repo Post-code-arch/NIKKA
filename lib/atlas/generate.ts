@@ -1,3 +1,4 @@
+import { assertUnderCap } from "./budget";
 import { assertServer, isMockMode } from "./config";
 import { atlasJson } from "./http";
 import { mockSubmit } from "./mock";
@@ -26,6 +27,8 @@ async function submit(endpoint: GenerationEndpoint, body: GenerationBody): Promi
       status: "created",
     };
   }
+  // Hard cap: the generation was recorded with its estimate just before this call.
+  await assertUnderCap(`${body.model}`);
   const res = await atlasJson(SubmitResponseSchema, `/model/${endpoint}`, {
     method: "POST",
     body,
