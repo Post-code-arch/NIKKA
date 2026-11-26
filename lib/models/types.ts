@@ -27,6 +27,7 @@ export interface ModelEntry {
   maxReferenceImages?: number;
   supportsStartEndFrames?: boolean;
   supportsSeed?: boolean;
+  supportsNegativePrompt?: boolean;
   durations?: number[];
   resolutions?: string[];
   pricing: { unit: "image" | "second" | "request"; usd: number };

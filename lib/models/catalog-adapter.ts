@@ -184,6 +184,7 @@ export function entryFromDescriptor(d: ModelDescriptor): ModelEntry {
     endpoint: d.endpoint,
     pricing: d.pricing,
     supportsSeed: !!f.seed,
+    supportsNegativePrompt: !!f.negativePrompt,
     maxReferenceImages: f.images?.max,
     supportsStartEndFrames: !!f.endImage,
     durations: f.duration?.values,

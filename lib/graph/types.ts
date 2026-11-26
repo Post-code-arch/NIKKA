@@ -2,32 +2,40 @@ import { z } from "zod";
 
 /**
  * Project canvas: a free node graph, independent of sequences and shots.
- * Node types: inputs (text, image, video), a prompt enhancer (LLM) and three
- * generators (text → image, text → video, image → video). New node types (V2: depth,
+ * Node types: inputs (text, image, video, bible reference, negative), a
+ * prompt enhancer (LLM) and three generators (text → image, text → video, image → video). New node types (V2: depth,
  * mask, relight…) are added here without touching the engine.
  */
 
-export type PortType = "text" | "image" | "video";
+/** "negative" is its own type so a negative prompt is never wired into a prompt by mistake. */
+export type PortType = "text" | "image" | "video" | "negative";
 
 export const PORT_COLOR: Record<PortType, string> = {
   text: "var(--port-text)",
   image: "var(--port-image)",
   video: "var(--port-video)",
+  negative: "var(--port-negative)",
 };
 
 export const PORT_LABEL: Record<PortType, string> = {
   text: "texte",
   image: "image",
   video: "vidéo",
+  negative: "négatif",
 };
 
 export interface PortSpec {
   id: string;
   type: PortType;
   label?: string;
+  /** Accepts several links (joined texts, several reference images). */
+  multiple?: boolean;
+  /** Optional input: only used when the model supports it. */
+  optional?: boolean;
 }
 
-export type NodeType = "text" | "image" | "video" | "promptEnhancer" | "textToImage" | "textToVideo" | "imageToVideo";
+export const NODE_TYPES = ["text", "image", "video", "reference", "negative", "promptEnhancer", "textToImage", "textToVideo", "imageToVideo"] as const;
+export type NodeType = (typeof NODE_TYPES)[number];
 
 export interface NodeSpec {
   label: string;
@@ -36,6 +44,8 @@ export interface NodeSpec {
   outputs: PortSpec[];
   /** Generators call a model of this kind and produce results. */
   model?: "t2i" | "t2v" | "i2v";
+  /** Other model kinds the node may use (text → image with references uses an edit model). */
+  altModels?: ("i2i")[];
   /** Calls the LLM (text in, text out). */
   llm?: boolean;
 }
@@ -59,6 +69,21 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     inputs: [],
     outputs: [{ id: "video", type: "video" }],
   },
+  reference: {
+    label: "Référence",
+    description: "Un personnage, lieu ou objet de la bible : ses images et son descripteur",
+    inputs: [],
+    outputs: [
+      { id: "images", type: "image", label: "images" },
+      { id: "text", type: "text", label: "descripteur" },
+    ],
+  },
+  negative: {
+    label: "Négatif",
+    description: "Ce que le modèle doit éviter (si le modèle l'accepte)",
+    inputs: [],
+    outputs: [{ id: "negative", type: "negative" }],
+  },
   promptEnhancer: {
     label: "Prompt enhancer",
     description: "Un LLM réécrit et enrichit ton prompt",
@@ -69,14 +94,22 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
   textToImage: {
     label: "Texte → image",
     description: "Génère une image à partir d'un texte",
-    inputs: [{ id: "prompt", type: "text", label: "prompt" }],
+    inputs: [
+      { id: "prompt", type: "text", label: "prompt", multiple: true },
+      { id: "refs", type: "image", label: "références", multiple: true, optional: true },
+      { id: "negative", type: "negative", label: "négatif", optional: true },
+    ],
     outputs: [{ id: "image", type: "image" }],
     model: "t2i",
+    altModels: ["i2i"],
   },
   textToVideo: {
     label: "Texte → vidéo",
     description: "Génère une vidéo à partir d'un texte",
-    inputs: [{ id: "prompt", type: "text", label: "prompt" }],
+    inputs: [
+      { id: "prompt", type: "text", label: "prompt", multiple: true },
+      { id: "negative", type: "negative", label: "négatif", optional: true },
+    ],
     outputs: [{ id: "video", type: "video" }],
     model: "t2v",
   },
@@ -85,14 +118,16 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     description: "Anime une image",
     inputs: [
       { id: "image", type: "image", label: "image de départ" },
-      { id: "prompt", type: "text", label: "prompt" },
+      { id: "end", type: "image", label: "image de fin", optional: true },
+      { id: "prompt", type: "text", label: "prompt", multiple: true },
+      { id: "negative", type: "negative", label: "négatif", optional: true },
     ],
     outputs: [{ id: "video", type: "video" }],
     model: "i2v",
   },
 };
 
-export const NODE_ORDER: NodeType[] = ["text", "image", "video", "promptEnhancer", "textToImage", "textToVideo", "imageToVideo"];
+export const NODE_ORDER: NodeType[] = [...NODE_TYPES];
 
 export const GraphNodeDataSchema = z.looseObject({
   /** text; prompt enhancer: its (editable) result */
@@ -101,6 +136,8 @@ export const GraphNodeDataSchema = z.looseObject({
   target: z.enum(["image", "video"]).optional(),
   instruction: z.string().max(500).optional(),
   source: z.string().optional(),
+  /** reference: the bible reference it brings */
+  referenceId: z.string().optional(),
   /** image / video: the imported file */
   assetId: z.string().optional(),
   /** generators */
@@ -115,7 +152,7 @@ export type GraphNodeData = z.infer<typeof GraphNodeDataSchema>;
 
 export const GraphNodeSchema = z.object({
   id: z.string().min(1),
-  type: z.enum(["text", "image", "video", "promptEnhancer", "textToImage", "textToVideo", "imageToVideo"]),
+  type: z.enum(NODE_TYPES),
   position: z.object({ x: z.number(), y: z.number() }),
   data: GraphNodeDataSchema,
 });
@@ -174,4 +211,10 @@ export function sanitizeGraph(input: unknown): CanvasGraph {
     return p.success && isValidEdge(graph, p.data) ? [p.data] : [];
   });
   return graph;
+}
+
+/** Can this input port take one more link? (single inputs are replaced) */
+export function acceptsMany(graph: CanvasGraph, nodeId: string, handle: string) {
+  const node = graph.nodes.find((n) => n.id === nodeId);
+  return !!node && !!NODE_SPECS[node.type].inputs.find((p) => p.id === handle)?.multiple;
 }

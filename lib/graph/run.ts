@@ -64,19 +64,44 @@ export function selectedRun(node: GraphNode, runs: NodeRun[]): NodeRun | undefin
   return mine.find((r) => r.id === node.data.selectedRunId) ?? mine[0];
 }
 
+/** The bible reference a Reference node brings (descriptor verbatim, images of its first variant). */
+function referenceOf(node: GraphNode) {
+  if (node.type !== "reference" || !node.data.referenceId) return undefined;
+  const db = getDb();
+  const ref = db.select().from(schema.references).where(eq(schema.references.id, node.data.referenceId)).get();
+  if (!ref) return undefined;
+  const variant = db.select().from(schema.referenceVariants).where(eq(schema.referenceVariants.referenceId, ref.id)).all()[0];
+  return { ref, assetIds: (variant?.views ?? []).map((v) => v.assetId) };
+}
+
 /** Asset carried by a node's output (imported file or selected result). */
 export function assetOf(node: GraphNode, runs: NodeRun[]): string | undefined {
-  if (node.type === "image" || node.type === "video") return node.data.assetId;
-  if (NODE_SPECS[node.type].model) return selectedRun(node, runs)?.assetId ?? undefined;
-  return undefined;
+  return assetsOf(node, runs)[0];
+}
+
+/** Every image a node passes downstream (a reference passes all its views). */
+export function assetsOf(node: GraphNode, runs: NodeRun[]): string[] {
+  if (node.type === "image" || node.type === "video") return node.data.assetId ? [node.data.assetId] : [];
+  if (node.type === "reference") return referenceOf(node)?.assetIds ?? [];
+  if (NODE_SPECS[node.type].model) {
+    const id = selectedRun(node, runs)?.assetId;
+    return id ? [id] : [];
+  }
+  return [];
+}
+
+/** Text a node outputs: typed text, enhanced prompt, or a reference's descriptor (never rewritten, rule 7). */
+function textOf(node: GraphNode): string {
+  if (node.type === "reference") return referenceOf(node)?.ref.descriptor.trim() ?? "";
+  return node.data.text?.trim() ?? "";
 }
 
 /** Text arriving on a node's prompt input (several links are joined in link order). */
-export function incomingText(graph: CanvasGraph, node: GraphNode): string {
-  return incoming(graph, node.id, "prompt")
-    .map((s) => s.data.text?.trim() ?? "")
+export function incomingText(graph: CanvasGraph, node: GraphNode, handle = "prompt"): string {
+  return incoming(graph, node.id, handle)
+    .map(textOf)
     .filter(Boolean)
-    .join("\n\n");
+    .join(handle === "negative" ? ", " : "\n\n");
 }
 
 export function resolvePrompt(graph: CanvasGraph, gen: GraphNode): string {
@@ -84,11 +109,7 @@ export function resolvePrompt(graph: CanvasGraph, gen: GraphNode): string {
   if (sources.length === 0) throw new GenerationError("Branche un node Texte sur l'entrée prompt", 400);
   const pending = sources.find((s) => s.type === "promptEnhancer" && !s.data.text?.trim());
   if (pending) throw new GenerationError("Le prompt enhancer branché n'a pas encore été lancé : clique sur « Améliorer »", 400);
-  // Several Text nodes on the same input are joined in link order.
-  const text = sources
-    .map((s) => s.data.text?.trim() ?? "")
-    .filter(Boolean)
-    .join("\n\n");
+  const text = incomingText(graph, gen);
   if (!text) throw new GenerationError("Le node Texte branché est vide", 400);
   return text;
 }
@@ -118,11 +139,20 @@ export interface RunEstimate {
   needsConfirmation: boolean;
 }
 
-export function nodeModel(node: GraphNode): ModelEntry {
-  const kind = NODE_SPECS[node.type].model;
-  if (!kind) throw new GenerationError("Ce node ne génère rien", 400);
+/** Model kinds a node may use: text → image takes an edit model when references are wired. */
+export function nodeKinds(type: GraphNode["type"]) {
+  const spec = NODE_SPECS[type];
+  return spec.model ? [spec.model, ...(spec.altModels ?? [])] : [];
+}
+
+export function nodeModel(node: GraphNode, graph?: CanvasGraph): ModelEntry {
+  const kinds: string[] = nodeKinds(node.type);
+  if (!kinds.length) throw new GenerationError("Ce node ne génère rien", 400);
   const model = node.data.modelId ? getModel(node.data.modelId) : undefined;
-  const chosen = model?.kind === kind ? model : availableModels(kind)[0];
+  if (model && kinds.includes(model.kind)) return model;
+  // No (valid) choice: an edit model when references are wired, else the node's main kind.
+  const wantsRefs = !!graph && incoming(graph, node.id, "refs").length > 0;
+  const chosen = (wantsRefs ? availableModels("i2i")[0] : undefined) ?? availableModels(NODE_SPECS[node.type].model)[0];
   if (!chosen) throw new GenerationError("Aucun modèle disponible pour ce node", 400);
   return chosen;
 }
@@ -141,8 +171,9 @@ function durationOf(node: GraphNode, model: ModelEntry): number | undefined {
 
 export function estimateRun(projectId: string, opts: RunOptions): RunEstimate {
   const project = loadProject(projectId);
-  const node = findGenNode(sanitizeGraph(project.canvas), opts.nodeId);
-  const model = nodeModel(node);
+  const graph = sanitizeGraph(project.canvas);
+  const node = findGenNode(graph, opts.nodeId);
+  const model = nodeModel(node, graph);
   const variants = Math.min(8, Math.max(1, opts.variants ?? 1));
   const unit = estimateCostUsd(model, { seconds: durationOf(node, model) ?? DEFAULT_DURATION_SEC });
   const total = round(unit * variants);
@@ -170,15 +201,41 @@ export async function runNode(projectId: string, opts: RunOptions): Promise<{ es
   const project = loadProject(projectId);
   const graph = sanitizeGraph(project.canvas);
   const node = findGenNode(graph, opts.nodeId);
-  const model = nodeModel(node);
+  const model = nodeModel(node, graph);
   const prompt = resolvePrompt(graph, node);
   const generic: GenericInputs = { prompt, durationSec: durationOf(node, model) };
+  const runs = nodeRunsOf(projectId);
+  const wired = (handle: string) => incoming(graph, node.id, handle);
+
+  // Reference images: only for models that take them, and required by edit models.
+  const refIds = [...new Set(wired("refs").flatMap((n) => assetsOf(n, runs)))];
+  if (refIds.length && !model.maxReferenceImages) {
+    throw new GenerationError(`${model.label} n'accepte pas d'images de référence : choisis un modèle marqué « réf »`, 400);
+  }
+  if (model.kind === "i2i") {
+    if (!refIds.length) throw new GenerationError(`${model.label} part d'images : branche une Image ou une Référence (avec des vues) sur « références »`, 400);
+    generic.referenceImageUrls = await Promise.all(refIds.slice(0, model.maxReferenceImages).map(uploadAsset));
+  }
+
+  // Negative prompt: only models whose schema has one.
+  const negative = incomingText(graph, node, "negative");
+  if (negative) {
+    if (!model.supportsNegativePrompt) {
+      throw new GenerationError(`${model.label} n'accepte pas de prompt négatif : choisis un modèle marqué « négatif » ou débranche-le`, 400);
+    }
+    generic.negativePrompt = negative;
+  }
 
   if (node.type === "imageToVideo") {
-    const start = incoming(graph, node.id, "image")[0];
-    const startId = start ? assetOf(start, nodeRunsOf(projectId)) : undefined;
+    const startId = wired("image").flatMap((n) => assetsOf(n, runs))[0];
     if (!startId) throw new GenerationError("Il faut une image de départ : branche un node Image ou une image générée", 400);
     generic.startImageUrl = await uploadAsset(startId);
+    const endId = wired("end").flatMap((n) => assetsOf(n, runs))[0];
+    if (wired("end").length) {
+      if (!model.supportsStartEndFrames) throw new GenerationError(`${model.label} n'accepte pas d'image de fin : choisis un modèle marqué « début + fin »`, 400);
+      if (!endId) throw new GenerationError("L'image de fin branchée est vide", 400);
+      generic.endImageUrl = await uploadAsset(endId);
+    }
   }
 
   // Seeds: locked = base, base+1… so variants stay comparable; else random.

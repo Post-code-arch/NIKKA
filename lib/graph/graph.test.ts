@@ -23,7 +23,7 @@ const node = (id: string, type: CanvasGraph["nodes"][number]["type"], data = {})
 
 describe("node types", () => {
   it("has the six base nodes plus the prompt enhancer", () => {
-    expect(NODE_ORDER).toEqual(["text", "image", "video", "promptEnhancer", "textToImage", "textToVideo", "imageToVideo"]);
+    expect(NODE_ORDER).toEqual(["text", "image", "video", "reference", "negative", "promptEnhancer", "textToImage", "textToVideo", "imageToVideo"]);
     expect(NODE_ORDER.filter((t) => NODE_SPECS[t].model)).toEqual(["textToImage", "textToVideo", "imageToVideo"]);
   });
 
@@ -172,6 +172,71 @@ describe("project canvas (mock)", () => {
     expect(getCanvas(project.id).graph.nodes.find((n) => n.id === "e")!.data.text).toBe(r.text);
     const run = await runNode(project.id, { nodeId: "img" });
     expect(run.runs[0].prompt).toBe(r.text);
+  });
+
+  it("reference + negative: edit model picked, views as references, descriptor verbatim, negative sent", async () => {
+    const { db, schema, project } = await makeProject("Refs");
+    const { storeAsset } = await import("@/lib/media/store");
+    const { makeMockPng } = await import("@/lib/atlas/mock");
+    const views = await Promise.all(["aa0000", "00aa00", "0000aa"].map((c, i) => storeAsset(makeMockPng(c), "image/png", `v${i}.png`)));
+    const ref = db.insert(schema.references).values({ projectId: project.id, name: "Lina", tag: "character", descriptor: "Lina, manteau rouge." }).returning().get();
+    db.insert(schema.referenceVariants).values({ referenceId: ref.id, name: "Principale", views: views.map((v) => ({ assetId: v.id, view: "face_front" as const })) }).run();
+    const { writeGraph, runNode } = await import("./run");
+    writeGraph(project.id, {
+      nodes: [
+        node("r", "reference", { referenceId: ref.id }),
+        node("t", "text", { text: "attend sur le quai" }),
+        node("n", "negative", { text: "flou, texte" }),
+        node("img", "textToImage"),
+      ],
+      edges: [
+        { id: "e1", source: "r", sourceHandle: "text", target: "img", targetHandle: "prompt" },
+        { id: "e2", source: "t", sourceHandle: "text", target: "img", targetHandle: "prompt" },
+        { id: "e3", source: "r", sourceHandle: "images", target: "img", targetHandle: "refs" },
+        { id: "e4", source: "n", sourceHandle: "negative", target: "img", targetHandle: "negative" },
+      ],
+    });
+    const r = await runNode(project.id, { nodeId: "img" });
+    expect(r.estimate.modelId).toBe("mock/edit-multi-ref"); // references wired → edit model
+    expect(r.runs[0].prompt).toBe("Lina, manteau rouge.\n\nattend sur le quai");
+    expect(r.runs[0].params.images).toHaveLength(3);
+    expect(r.runs[0].params.negative_prompt).toBe("flou, texte");
+  });
+
+  it("refuses inputs the chosen model does not accept", async () => {
+    const { project } = await makeProject("Caps");
+    const { storeAsset } = await import("@/lib/media/store");
+    const { makeMockPng } = await import("@/lib/atlas/mock");
+    const a = await storeAsset(makeMockPng("123456"), "image/png", "a.png");
+    const b = await storeAsset(makeMockPng("654321"), "image/png", "b.png");
+    const { writeGraph, runNode } = await import("./run");
+    const graph = (modelId: string) => ({
+      nodes: [
+        node("t", "text", { text: "Elle se retourne" }),
+        node("s", "image", { assetId: a.id }),
+        node("f", "image", { assetId: b.id }),
+        node("n", "negative", { text: "flou" }),
+        node("v", "imageToVideo", { modelId }),
+      ],
+      edges: [
+        { id: "e1", source: "t", sourceHandle: "text", target: "v", targetHandle: "prompt" },
+        { id: "e2", source: "s", sourceHandle: "image", target: "v", targetHandle: "image" },
+        { id: "e3", source: "f", sourceHandle: "image", target: "v", targetHandle: "end" },
+        { id: "e4", source: "n", sourceHandle: "negative", target: "v", targetHandle: "negative" },
+      ],
+    });
+    writeGraph(project.id, graph("mock/image-to-video"));
+    await expect(runNode(project.id, { nodeId: "v" })).rejects.toThrow(/prompt négatif/);
+    writeGraph(project.id, graph("mock/image-to-video-pro"));
+    const r = await runNode(project.id, { nodeId: "v" });
+    expect(r.runs[0].params).toMatchObject({ negative_prompt: "flou" });
+    expect(String(r.runs[0].params.end_image)).toMatch(/^mock:\/\/upload\//);
+  });
+
+  it("a negative output cannot be wired into a prompt", () => {
+    const g: CanvasGraph = { nodes: [node("n", "negative"), node("img", "textToImage")], edges: [] };
+    expect(isValidEdge(g, { source: "n", sourceHandle: "negative", target: "img", targetHandle: "prompt" })).toBe(false);
+    expect(isValidEdge(g, { source: "n", sourceHandle: "negative", target: "img", targetHandle: "negative" })).toBe(true);
   });
 
   it("prompt enhancer refuses an empty input", async () => {

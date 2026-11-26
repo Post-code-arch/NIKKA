@@ -29,6 +29,8 @@ export interface GraphContextValue {
   enhance: (nodeId: string) => Promise<void>;
   /** Text currently arriving on a node's prompt input. */
   inputText: (nodeId: string) => string;
+  /** Is something wired on this input? */
+  wired: (nodeId: string, handle: string) => boolean;
   llm: { mock: boolean; estimatedUsdPerCall: number };
 }
 
@@ -142,6 +144,71 @@ function ImportNode({ data, id, type, selected }: Props) {
 }
 
 export const ImageNode = (p: Props) => <ImportNode {...p} type="image" />;
+
+/** A bible reference: its images (all views) and its descriptor, injected word for word. */
+export function ReferenceNode({ data, id, selected }: Props) {
+  const { project, updateData } = useGraph();
+  const ref = project.references.find((r) => r.id === data.referenceId);
+  const views = ref?.variants[0]?.views ?? [];
+  return (
+    <NodeCard title="Référence" width={250} glow={selected ? PORT_COLOR.image : undefined}>
+      <NodePanel className="space-y-2">
+        <Ports type="reference" />
+        <select
+          value={data.referenceId ?? ""}
+          onChange={(e) => updateData(id, { referenceId: e.target.value || undefined })}
+          className="nodrag h-7 w-full rounded-md bg-surface px-1.5 text-[11px] outline-none"
+        >
+          <option value="">{project.references.length ? "Choisir dans la bible…" : "Bible vide (onglet Storyboard → Bible)"}</option>
+          {project.references.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.name}
+            </option>
+          ))}
+        </select>
+        {ref && (
+          <>
+            {views.length > 0 ? (
+              <div className="grid grid-cols-4 gap-1">
+                {views.slice(0, 8).map((v, i) => (
+                  <Thumb key={`${v.assetId}-${i}`} assetId={v.assetId} className="aspect-square w-full" />
+                ))}
+              </div>
+            ) : (
+              <p className="text-[10px] text-muted-foreground">Aucune image : ajoute des vues dans sa fiche (Bible).</p>
+            )}
+            <p className="nowheel max-h-20 overflow-y-auto text-[10px] leading-relaxed text-muted-foreground">{ref.descriptor || "Pas de descripteur."}</p>
+            <div className="text-[10px] text-muted-foreground">
+              {views.length} image{views.length > 1 ? "s" : ""} → « références » · descripteur → « prompt »
+            </div>
+          </>
+        )}
+      </NodePanel>
+    </NodeCard>
+  );
+}
+
+/** What the model must avoid; only sent to models that accept a negative prompt. */
+export function NegativeNode({ data, id, selected }: Props) {
+  const { updateData } = useGraph();
+  const [text, setText] = useState(data.text ?? "");
+  return (
+    <NodeCard title="Négatif" width={240} glow={selected ? PORT_COLOR.negative : undefined}>
+      <NodePanel className="space-y-2">
+        <Ports type="negative" />
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={() => text !== (data.text ?? "") && updateData(id, { text })}
+          rows={3}
+          placeholder="flou, texte, filigrane, mains déformées…"
+          className="nodrag nowheel w-full resize-none rounded-md bg-surface p-2 text-[11px] leading-relaxed outline-none placeholder:text-muted-foreground/50"
+        />
+        <div className="text-[10px] text-muted-foreground">Envoyé seulement aux modèles marqués « négatif ».</div>
+      </NodePanel>
+    </NodeCard>
+  );
+}
 export const VideoNode = (p: Props) => <ImportNode {...p} type="video" />;
 
 // --- Prompt enhancer (LLM) -------------------------------------------------------------
@@ -183,7 +250,7 @@ export function PromptEnhancerNode({ data, id, selected }: Props) {
       <NodePanel className="space-y-2">
         <Ports type="promptEnhancer" />
         <NodeField label="LLM">
-          <ModelPicker kind="llm" value={data.modelId} onChange={(modelId) => updateData(id, { modelId })} />
+          <ModelPicker kinds={["llm"]} value={data.modelId} onChange={(modelId) => updateData(id, { modelId })} />
         </NodeField>
         <NodeField label="Pour">
           <select
@@ -290,11 +357,24 @@ function SendToShot({ run }: { run: NodeRun }) {
 }
 
 function GeneratorNode({ data, id, type, selected }: Props) {
-  const { models, runs, updateData, run } = useGraph();
-  const kind = NODE_SPECS[type].model!;
+  const { models, runs, updateData, run, wired } = useGraph();
+  const spec = NODE_SPECS[type];
+  const kind = spec.model!;
+  const kinds = [kind, ...(spec.altModels ?? [])];
   const video = kind !== "t2i";
-  const choices = models.filter((m) => m.kind === kind);
-  const model = choices.find((m) => m.id === data.modelId) ?? choices[0];
+  const hasRefs = wired(id, "refs");
+  const choices = models.filter((m) => kinds.includes(m.kind as typeof kind));
+  // Same default as the server: an edit model when references are wired.
+  const model =
+    choices.find((m) => m.id === data.modelId) ??
+    (hasRefs ? choices.find((m) => m.kind === "i2i") : undefined) ??
+    choices.find((m) => m.kind === kind);
+  const issues = [
+    hasRefs && model && !model.maxReferenceImages && "ce modèle n'accepte pas d'images de référence",
+    !hasRefs && model?.kind === "i2i" && "ce modèle d'édition a besoin d'images sur « références »",
+    wired(id, "negative") && model && !model.supportsNegativePrompt && "ce modèle n'accepte pas de prompt négatif",
+    wired(id, "end") && model && !model.supportsStartEndFrames && "ce modèle n'accepte pas d'image de fin",
+  ].filter((x): x is string => !!x);
   const durations = model?.durations ?? [];
   const duration = data.durationSec ?? durations[0] ?? 5;
   const [variants, setVariants] = useState(1);
@@ -318,8 +398,14 @@ function GeneratorNode({ data, id, type, selected }: Props) {
       <NodePanel>
         <Ports type={type} />
         <NodeField label="Modèle">
-          <ModelPicker kind={kind} value={model?.id} onChange={(modelId) => updateData(id, { modelId })} />
+          <ModelPicker kinds={kinds} value={model?.id} onChange={(modelId) => updateData(id, { modelId })} />
         </NodeField>
+        {issues.map((t) => (
+          <p key={t} className="mb-1 text-[10px] text-origin-proposed">
+            <AlertTriangle className="mr-1 inline size-3" />
+            {t} : choisis-en un autre dans la liste (badges « réf », « négatif », « début + fin »).
+          </p>
+        ))}
         {video && durations.length > 0 && (
           <NodeField label="Durée">
             <select
@@ -424,6 +510,8 @@ export const graphNodeTypes = {
   text: TextNode,
   image: ImageNode,
   video: VideoNode,
+  reference: ReferenceNode,
+  negative: NegativeNode,
   promptEnhancer: PromptEnhancerNode,
   textToImage: TextToImageNode,
   textToVideo: TextToVideoNode,
@@ -436,6 +524,8 @@ const GROUP: Record<NodeType, string> = {
   text: "Entrées",
   image: "Entrées",
   video: "Entrées",
+  reference: "Entrées",
+  negative: "Texte",
   promptEnhancer: "Texte",
   textToImage: "Génération",
   textToVideo: "Génération",

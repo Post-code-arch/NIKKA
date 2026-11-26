@@ -21,6 +21,7 @@ import { IconPill, Island, Pill } from "@/components/ui/pill";
 import type { NodeRun } from "@/db/schema";
 import {
   NODE_ORDER,
+  acceptsMany,
   NODE_SPECS,
   PORT_COLOR,
   isValidEdge,
@@ -174,7 +175,8 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
   /** Adds a link; several texts may feed one prompt (joined), any other input takes a single link. */
   const link = (graph: CanvasGraph, conn: Omit<GraphEdge, "id">) => {
     if (!isValidEdge(graph, conn)) return false;
-    const multiple = conn.targetHandle === "prompt";
+    // Several texts on one prompt (joined), several reference images; other inputs take one link.
+    const multiple = acceptsMany(graph, conn.target, conn.targetHandle);
     const id = `e-${conn.source}-${conn.sourceHandle}-${conn.target}-${conn.targetHandle}`;
     setEdges((es) => [
       ...es.filter((e) => e.id !== id && (multiple || !(e.target === conn.target && e.targetHandle === conn.targetHandle))),
@@ -183,9 +185,24 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
     return true;
   };
 
+  /** Wiring references or an end frame switches the node to a model that accepts them (if its own does not). */
+  const fitModel = (nodeId: string, handle: string) => {
+    const target = latest.current.nodes.find((n) => n.id === nodeId);
+    if (!target) return;
+    const current = models.find((m) => m.id === target.data.modelId);
+    const ok = handle === "refs" ? !!current?.maxReferenceImages : handle === "end" ? !!current?.supportsStartEndFrames : true;
+    if (ok) return;
+    const better =
+      handle === "refs"
+        ? models.find((m) => m.kind === "i2i")
+        : models.find((m) => m.kind === "i2v" && m.supportsStartEndFrames);
+    if (better) setNodes((ns) => ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, modelId: better.id } } : n)));
+  };
+
   const onConnect = (c: Connection) => {
     if (!c.sourceHandle || !c.targetHandle) return;
     if (link(graphNow(), { source: c.source, sourceHandle: c.sourceHandle, target: c.target, targetHandle: c.targetHandle })) {
+      fitModel(c.target, c.targetHandle);
       setTimeout(() => save(true), 30);
     }
   };
@@ -243,9 +260,15 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
     inputText: (nodeId: string) =>
       edges
         .filter((e) => e.target === nodeId && e.targetHandle === "prompt")
-        .map((e) => nodes.find((n) => n.id === e.source)?.data.text?.trim() ?? "")
+        .map((e) => {
+          const src = nodes.find((n) => n.id === e.source);
+          // A reference brings its descriptor, word for word.
+          if (src?.type === "reference") return project.references.find((r) => r.id === src.data.referenceId)?.descriptor.trim() ?? "";
+          return src?.data.text?.trim() ?? "";
+        })
         .filter(Boolean)
         .join("\n\n"),
+    wired: (nodeId: string, handle: string) => edges.some((e) => e.target === nodeId && e.targetHandle === handle),
     // Saved graph first, then the LLM; the result lands in the node (and downstream).
     enhance: async (nodeId: string) => {
       await flush();
