@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 
 const QUALITY_LABEL: Record<string, string> = { low: "basse", medium: "moyenne", high: "haute", xhigh: "très haute", max: "max" };
 import { ModelPicker } from "./model-picker";
+import { NODE_SHORTCUTS } from "./shortcuts";
 
 /** What every node of the project canvas can read and do. */
 export interface GraphContextValue {
@@ -605,6 +606,7 @@ export function NodePalette({
   onClose,
   types = NODE_ORDER,
   title = "Ajouter un node",
+  search = false,
 }: {
   x: number;
   y: number;
@@ -613,27 +615,73 @@ export function NodePalette({
   /** Only these node types (e.g. those that can take a dragged link). */
   types?: NodeType[];
   title?: string;
+  /** Opened from the keyboard: type to filter, arrows to move, Enter to add. */
+  search?: boolean;
 }) {
+  const [q, setQ] = useState("");
+  const [active, setActive] = useState(0);
+  const query = q.trim().toLowerCase();
+  const shown = types.filter(
+    (t) => !query || `${NODE_SPECS[t].label} ${NODE_SPECS[t].description}`.toLowerCase().includes(query) || NODE_SHORTCUTS[t].toLowerCase() === query,
+  );
+  const current = Math.min(active, Math.max(0, shown.length - 1));
   return (
-    <div className="island absolute z-30 w-60 p-1.5" style={{ left: x, top: y }} onMouseDown={(e) => e.stopPropagation()}>
+    <div className="island absolute z-30 w-64 p-1.5" style={{ left: x, top: y }} onMouseDown={(e) => e.stopPropagation()}>
       <div className="mb-1 flex items-center justify-between px-1.5 text-[11px] text-muted-foreground">
         {title}
         <IconPill aria-label="Fermer" className="size-6 bg-transparent" onClick={onClose}>
           <X />
         </IconPill>
       </div>
-      {types.length === 0 && <p className="px-2 py-1 text-[10px] text-muted-foreground">Aucun node ne prend ce type de lien.</p>}
-      {types.map((type, i) => (
-        <div key={type}>
-          {(i === 0 || GROUP[types[i - 1]] !== GROUP[type]) && (
-            <div className="mt-1 px-2 pt-1 text-[9px] tracking-wide text-muted-foreground/70 uppercase">{GROUP[type]}</div>
-          )}
-          <button type="button" onClick={() => onPick(type)} className="block w-full rounded-md px-2 py-1.5 text-left hover:bg-surface-2">
-            <div className="text-xs">{NODE_SPECS[type].label}</div>
-            <div className="text-[10px] text-muted-foreground">{NODE_SPECS[type].description}</div>
-          </button>
-        </div>
-      ))}
+      {search && (
+        <input
+          autoFocus
+          value={q}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setActive(0);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setActive((a) => Math.min(a + 1, shown.length - 1));
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setActive((a) => Math.max(a - 1, 0));
+            } else if (e.key === "Enter" && shown[current]) {
+              e.preventDefault();
+              onPick(shown[current]);
+            } else if (e.key === "Escape") onClose();
+          }}
+          placeholder="Chercher… (Entrée pour ajouter)"
+          aria-label="Chercher un node"
+          className="mb-1 h-7 w-full rounded-md bg-surface px-2 text-[11px] outline-none placeholder:text-muted-foreground/50"
+        />
+      )}
+      <div className="nowheel max-h-96 overflow-y-auto">
+        {shown.length === 0 && (
+          <p className="px-2 py-1 text-[10px] text-muted-foreground">{types.length ? "Aucun node ne correspond." : "Aucun node ne prend ce type de lien."}</p>
+        )}
+        {shown.map((type, i) => (
+          <div key={type}>
+            {!query && (i === 0 || GROUP[shown[i - 1]] !== GROUP[type]) && (
+              <div className="mt-1 px-2 pt-1 text-[9px] tracking-wide text-muted-foreground/70 uppercase">{GROUP[type]}</div>
+            )}
+            <button
+              type="button"
+              onClick={() => onPick(type)}
+              onMouseEnter={() => setActive(i)}
+              className={cn("flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-surface-2", search && i === current && "bg-surface-2")}
+            >
+              <span className="min-w-0 flex-1">
+                <div className="text-xs">{NODE_SPECS[type].label}</div>
+                <div className="text-[10px] text-muted-foreground">{NODE_SPECS[type].description}</div>
+              </span>
+              <kbd className="mt-0.5 shrink-0 rounded border px-1 font-mono text-[9px] text-muted-foreground">{NODE_SHORTCUTS[type]}</kbd>
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

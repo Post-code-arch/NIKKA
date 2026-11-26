@@ -15,7 +15,7 @@ import {
   type Edge,
   type Node,
 } from "@xyflow/react";
-import { BoxSelect, Copy, Crosshair, Grid2x2, Minus, Plus, Trash2, X } from "lucide-react";
+import { BoxSelect, Copy, Crosshair, Grid2x2, Keyboard, Minus, Plus, Trash2, X } from "lucide-react";
 import { GradientEdge } from "@/components/nodes/gradient-edge";
 import { IconPill, Island, Pill } from "@/components/ui/pill";
 import type { NodeRun } from "@/db/schema";
@@ -40,6 +40,7 @@ import { useProjectStore } from "@/lib/store/project-store";
 import { useUiStore } from "@/lib/store/ui-store";
 import { GraphContext, NodePalette, graphNodeTypes } from "./graph-nodes";
 import { NODE_MIME, NodeLibrary } from "./node-library";
+import { CANVAS_SHORTCUTS, NODE_BY_KEY } from "./shortcuts";
 import { useRunner } from "./run-confirm";
 
 const edgeTypes = { gradient: GradientEdge };
@@ -130,7 +131,10 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
   const [runs, setRuns] = useState<NodeRun[]>([]);
   const [llm, setLlm] = useState({ mock: true, estimatedUsdPerCall: 0 });
   const [loaded, setLoaded] = useState(false);
-  const [palette, setPalette] = useState<{ x: number; y: number; flow: { x: number; y: number }; link?: PendingLink } | null>(null);
+  const [palette, setPalette] = useState<{ x: number; y: number; flow: { x: number; y: number }; link?: PendingLink; search?: boolean } | null>(null);
+  const [help, setHelp] = useState(false);
+  /** Last mouse position over the canvas: keyboard-created nodes appear there. */
+  const pointer = useRef<{ x: number; y: number } | null>(null);
   const panelOpen = useUiStore((s) => s.nodePanelOpen);
   const setPanelOpen = useUiStore((s) => s.setNodePanelOpen);
   const FIT = fitOptions(panelOpen);
@@ -255,14 +259,14 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
     }
   };
 
-  const addNode = (type: NodeType, at: { x: number; y: number }, from?: PendingLink, preferredModel?: string) => {
+  const addNode = (type: NodeType, at: { x: number; y: number }, from?: PendingLink, preferredModel?: string, select = false) => {
     const id = uniqueId(latest.current.nodes, type);
     const kind = NODE_SPECS[type].model;
     const modelId = preferredModel ?? (kind ? models.find((m) => m.kind === kind)?.id : undefined);
     const data: GraphNodeData = type === "text" ? { text: "" } : modelId ? { modelId } : {};
     // Dropped from an output: the node sits to the right of the cursor; from an input: to the left.
     const position = from?.side === "target" ? { x: at.x - 280, y: at.y - 30 } : from ? { x: at.x, y: at.y - 30 } : at;
-    setNodes((ns) => [...ns, { id, type, position, data }]);
+    setNodes((ns) => [...(select ? ns.map((n) => (n.selected ? { ...n, selected: false } : n)) : ns), { id, type, position, data, selected: select }]);
     const port = from && matchingPort(type, from);
     if (from && port) {
       const graph = graphNow();
@@ -276,9 +280,38 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
     }
     setPalette(null);
     setTimeout(() => save(true), 30);
+    return id;
   };
 
-  const openPalette = (clientX: number, clientY: number, from?: PendingLink) => {
+  /**
+   * Keyboard creation. One node selected: the new one goes next to it and is
+   * linked to it (its output into the new node, else the new node into it).
+   * Otherwise it appears under the mouse. The new node becomes the selection,
+   * so keys chain: T, 1, 3 = texte → image → vidéo.
+   */
+  const createFromKey = (type: NodeType) => {
+    const selected = latest.current.nodes.filter((n) => n.selected);
+    if (selected.length === 1) {
+      const s = selected[0];
+      const width = rf.getNode(s.id)?.measured?.width ?? 280;
+      const out = NODE_SPECS[s.type as NodeType].outputs.find((o) => NODE_SPECS[type].inputs.some((i) => i.type === o.type));
+      if (out) {
+        addNode(type, { x: s.position.x + width + 90, y: s.position.y + 30 }, { nodeId: s.id, handleId: out.id, side: "source", type: out.type }, undefined, true);
+        return;
+      }
+      const into = NODE_SPECS[s.type as NodeType].inputs.find((i) => NODE_SPECS[type].outputs.some((o) => o.type === i.type));
+      if (into) {
+        addNode(type, { x: s.position.x - 90, y: s.position.y + 30 }, { nodeId: s.id, handleId: into.id, side: "target", type: into.type }, undefined, true);
+        return;
+      }
+    }
+    const r = wrapper.current!.getBoundingClientRect();
+    const p = pointer.current ?? { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    const at = rf.screenToFlowPosition(p);
+    addNode(type, { x: at.x - 130, y: at.y - 40 }, undefined, undefined, true);
+  };
+
+  const openPalette = (clientX: number, clientY: number, from?: PendingLink, search = false) => {
     const box = wrapper.current?.getBoundingClientRect();
     if (!box) return;
     setPalette({
@@ -286,6 +319,7 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
       y: Math.max(8, Math.min(clientY - box.top, box.height - 380)),
       flow: rf.screenToFlowPosition({ x: clientX, y: clientY }),
       link: from,
+      search,
     });
   };
 
@@ -394,7 +428,22 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
         duplicate(selectedIds());
       } else if (e.key === "Escape") {
         setMenu(null);
+        setHelp(false);
         clearSelection();
+      } else if (!mod && !e.altKey && (e.key === "Tab" || e.key === "/")) {
+        // Quick search at the mouse.
+        e.preventDefault();
+        const r = wrapper.current!.getBoundingClientRect();
+        const p = pointer.current ?? { x: r.left + r.width / 2 - 120, y: r.top + r.height / 3 };
+        setMenu(null);
+        openPalette(p.x, p.y, undefined, true);
+      } else if (!mod && !e.altKey && e.key === "?") {
+        e.preventDefault();
+        setHelp((h) => !h);
+      } else if (!mod && !e.altKey && !e.shiftKey && NODE_BY_KEY[key]) {
+        e.preventDefault();
+        setMenu(null);
+        createFromKey(NODE_BY_KEY[key]);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -514,6 +563,12 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
           if ((e.target as HTMLElement).classList.contains("react-flow__pane")) openPalette(e.clientX, e.clientY);
         }}
         onPointerDownCapture={onRightDown}
+        onPointerMove={(e) => {
+          pointer.current = { x: e.clientX, y: e.clientY };
+        }}
+        onPointerLeave={() => {
+          pointer.current = null;
+        }}
         onClickCapture={(e) => {
           if (!swallowClick.current) return;
           swallowClick.current = false;
@@ -585,8 +640,11 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
             </Pill>
           </Island>
           <p className="mt-2.5 ml-auto text-right text-[10px] text-muted-foreground">
-            Clic droit + glisser : sélectionner · clic droit : menu · ⌘Z annuler · ⌘⇧Z rétablir · ⌘A tout · ⌘D dupliquer · Suppr : effacer
+            Tab : chercher un node · T I V R N E · 1–5 : créer · clic droit + glisser : sélectionner · ⌘Z annuler
           </p>
+          <Pill className="pointer-events-auto h-7 text-[11px]" onClick={() => setHelp((h) => !h)} title="Tous les raccourcis (?)">
+            <Keyboard /> Raccourcis
+          </Pill>
         </div>
 
         <NodeLibrary open={panelOpen} onToggle={() => setPanelOpen(!panelOpen)} onAdd={(type, modelId) => addFromLibrary(type, undefined, undefined, modelId)} />
@@ -665,8 +723,30 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
           </IconPill>
         </Island>
 
+        {help && (
+          <div className="island absolute top-14 right-4 z-30 w-[440px] p-3" role="dialog" aria-label="Raccourcis du canvas">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm">Raccourcis du canvas</span>
+              <IconPill aria-label="Fermer" className="size-6 bg-transparent" onClick={() => setHelp(false)}>
+                <X />
+              </IconPill>
+            </div>
+            <table className="w-full text-[11px]">
+              <tbody>
+                {CANVAS_SHORTCUTS.map(([keys, what]) => (
+                  <tr key={keys} className="align-top">
+                    <td className="py-1 pr-3 font-mono whitespace-nowrap text-foreground">{keys}</td>
+                    <td className="py-1 text-muted-foreground">{what}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {palette && (
           <NodePalette
+            search={palette.search}
             x={palette.x}
             y={palette.y}
             types={palette.link ? NODE_ORDER.filter((t) => matchingPort(t, palette.link!)) : undefined}

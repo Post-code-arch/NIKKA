@@ -27,6 +27,7 @@ import { reloadModels, useModels } from "@/lib/store/models";
 import { cn } from "@/lib/utils";
 import { GROUP } from "./graph-nodes";
 import { Badges, KIND_LABEL, price } from "./model-picker";
+import { NODE_SHORTCUTS } from "./shortcuts";
 
 /** Drag payload: "nodeType", or "nodeType|modelId" for a model dragged from the Models tab. */
 export const NODE_MIME = "application/nikka-node";
@@ -134,16 +135,17 @@ function NodesTab({ q, onAdd }: { q: string; onAdd: OnAdd }) {
                 e.dataTransfer.effectAllowed = "copy";
               }}
               onClick={() => onAdd(type)}
-              title="Clic : ajouter au centre · glisser : déposer où tu veux"
+              title={`Clic : ajouter au centre · glisser : déposer où tu veux · touche ${NODE_SHORTCUTS[type]}`}
               className="flex w-full cursor-grab items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-surface-2 active:cursor-grabbing"
             >
               <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-md bg-surface" style={{ color: accent(type) }}>
                 <Icon className="size-3.5" />
               </span>
-              <span className="min-w-0">
+              <span className="min-w-0 flex-1">
                 <span className="block text-xs">{NODE_SPECS[type].label}</span>
                 <span className="block text-[10px] leading-snug text-muted-foreground">{NODE_SPECS[type].description}</span>
               </span>
+              <kbd className="mt-0.5 shrink-0 rounded border px-1 font-mono text-[9px] text-muted-foreground">{NODE_SHORTCUTS[type]}</kbd>
             </button>
           </div>
         );
