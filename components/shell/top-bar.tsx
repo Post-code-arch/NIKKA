@@ -89,8 +89,15 @@ export function TopBar() {
   return (
     <header className="pointer-events-none relative z-20 grid shrink-0 grid-cols-[1fr_auto_1fr] items-start gap-4 px-4 pt-4">
       <div className="pointer-events-auto flex items-center gap-3">
-        <Link href="/storyboard" className="grid size-10 place-items-center">
+        <Link
+          href="/storyboard"
+          className="relative grid size-10 place-items-center"
+          title={`NIKKA · version ${process.env.NEXT_PUBLIC_NIKKA_VERSION ?? "dev"}`}
+        >
           <Logo />
+          <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 font-mono text-[8px] whitespace-nowrap text-muted-foreground/60">
+            {process.env.NEXT_PUBLIC_NIKKA_VERSION?.split(" · ")[0]}
+          </span>
         </Link>
         <Island>
           {VIEWS.map((v) => (

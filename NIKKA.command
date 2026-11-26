@@ -30,13 +30,22 @@ fi
 UPDATED=0
 if command -v git >/dev/null 2>&1 && [ -d .git ]; then
   echo "• Mise à jour du code…"
-  git diff --quiet -- package-lock.json 2>/dev/null || git checkout -- package-lock.json
+  # Tools (npm, Next) rewrite some tracked files on their own: put them aside so the
+  # update is never blocked. Nothing is lost: `git stash list` keeps them.
+  git checkout -- package-lock.json tsconfig.json next-env.d.ts 2>/dev/null
+  if ! git diff --quiet 2>/dev/null; then
+    git stash push --quiet -m "nikka-launcher $(date +%F-%H%M)" && echo "  (modifications locales mises de côté : git stash list)"
+  fi
   BEFORE="$(git rev-parse HEAD 2>/dev/null)"
   if git pull --ff-only --quiet; then
     [ "$BEFORE" != "$(git rev-parse HEAD)" ] && UPDATED=1 && echo "  ✓ nouvelle version récupérée"
   else
-    echo "  ! mise à jour impossible (hors ligne ou fichiers modifiés). Détails : cd ~/NIKKA && git status"
+    echo ""
+    echo "  ✗ MISE À JOUR IMPOSSIBLE (connexion ? accès GitHub ?). NIKKA démarre sur l'ancienne version."
+    echo "    Détails : cd ~/NIKKA && git status && git pull"
+    echo ""
   fi
+  echo "  Version : $(git log -1 --format='%h · %cd' --date=format:'%d/%m %H:%M')"
 fi
 
 # Emblem as the Desktop shortcut's icon (silently skipped if it fails).
