@@ -7,7 +7,8 @@ import { GenerationError } from "@/lib/generation/service";
 import { mockTask } from "./mock";
 
 /** Digester tasks; each one has its system prompt in lib/digester/prompts/<task>.md. */
-export type DigestTask = "diagnose" | "extract" | "concepts" | "concept" | "treatment" | "breakdown";
+/** LLM tasks; each one has its system prompt in lib/digester/prompts/<task>.md. */
+export type DigestTask = "diagnose" | "extract" | "concepts" | "concept" | "treatment" | "breakdown" | "enhance";
 
 export class DigestError extends GenerationError {
   constructor(message: string, status = 502) {
@@ -59,7 +60,7 @@ export async function callJson<T extends z.ZodType>(
     if (!parsed.success) throw new DigestError(`Mock invalide (${task}) : ${zodMessage(parsed.error)}`, 500);
     return parsed.data;
   }
-  const send: ChatFn = chatOverride ?? (async (m) => (await chat(m, { json: true, temperature: task === "concepts" ? 0.9 : 0.3 })).text);
+  const send: ChatFn = chatOverride ?? (async (m) => (await chat(m, { json: true, temperature: task === "concepts" ? 0.9 : task === "enhance" ? 0.7 : 0.3 })).text);
   const user = [`BRIEF:\n${input.brief}`, input.context ? `CONTEXT (validated levels, JSON):\n${JSON.stringify(input.context, null, 2)}` : ""]
     .filter(Boolean)
     .join("\n\n");

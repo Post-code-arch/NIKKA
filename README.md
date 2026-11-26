@@ -56,8 +56,9 @@ Clique sur une carte de plan pour ouvrir sa **fiche** à droite :
 ### Canvas nodal libre (phase 4)
 
 Le **Storyboard** reste la voie rigide (Image clé, Animer, fiche du plan). Le **Canvas** est **un seul grand canvas par projet**, indépendant des séquences et des plans, vide au départ.
-- **+ Node** ou **double-clic sur le fond** ajoute l'un des 6 nodes : **Texte**, **Image** (import), **Vidéo** (import), **Texte → image**, **Texte → vidéo**, **Image → vidéo**.
+- **+ Node** ou **double-clic sur le fond** ajoute l'un des nodes : **Texte**, **Image** (import), **Vidéo** (import), **Prompt enhancer**, **Texte → image**, **Texte → vidéo**, **Image → vidéo**.
 - **Glisse une sortie (ou une entrée) dans le vide** : NIKKA propose aussitôt les nodes compatibles, et le nouveau node arrive déjà relié.
+- **Prompt enhancer** (node LLM) : branche un Texte dessus, choisis « pour une image / une vidéo », ajoute une consigne si tu veux, puis **Améliorer**. Le prompt enrichi (modifiable) sort vers les générateurs. Si le texte d'entrée change, le node le signale ; on relance quand on veut (pas d'appel automatique). Coût LLM affiché sur le node ; instructions du LLM dans `lib/digester/prompts/enhance.md`.
 - Relie les ports de même couleur (texte vert, image bleu, vidéo rose) ; les autres liens sont refusés. Plusieurs Textes sur un même prompt sont mis bout à bout. **Suppr** efface.
 - Chaque node de génération a son modèle, sa durée (vidéo), son seed (avec verrou), ses variantes (confirmation du total pour tout lot) et son coût estimé. Ses **résultats restent dans le canvas** : clique sur une vignette pour choisir celle qui part vers les nodes suivants.
 - Optionnel : **Envoyer au plan…** propose la liste des plans du storyboard ; le résultat devient une prise de ce plan.

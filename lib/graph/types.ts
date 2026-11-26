@@ -2,8 +2,8 @@ import { z } from "zod";
 
 /**
  * Project canvas: a free node graph, independent of sequences and shots.
- * Six node types: three inputs (text, image, video) and three generators
- * (text → image, text → video, image → video). New node types (V2: depth,
+ * Node types: inputs (text, image, video), a prompt enhancer (LLM) and three
+ * generators (text → image, text → video, image → video). New node types (V2: depth,
  * mask, relight…) are added here without touching the engine.
  */
 
@@ -27,7 +27,7 @@ export interface PortSpec {
   label?: string;
 }
 
-export type NodeType = "text" | "image" | "video" | "textToImage" | "textToVideo" | "imageToVideo";
+export type NodeType = "text" | "image" | "video" | "promptEnhancer" | "textToImage" | "textToVideo" | "imageToVideo";
 
 export interface NodeSpec {
   label: string;
@@ -36,6 +36,8 @@ export interface NodeSpec {
   outputs: PortSpec[];
   /** Generators call a model of this kind and produce results. */
   model?: "t2i" | "t2v" | "i2v";
+  /** Calls the LLM (text in, text out). */
+  llm?: boolean;
 }
 
 export const NODE_SPECS: Record<NodeType, NodeSpec> = {
@@ -56,6 +58,13 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     description: "Une vidéo importée de ton disque",
     inputs: [],
     outputs: [{ id: "video", type: "video" }],
+  },
+  promptEnhancer: {
+    label: "Prompt enhancer",
+    description: "Un LLM réécrit et enrichit ton prompt",
+    inputs: [{ id: "prompt", type: "text", label: "prompt" }],
+    outputs: [{ id: "text", type: "text", label: "prompt enrichi" }],
+    llm: true,
   },
   textToImage: {
     label: "Texte → image",
@@ -83,11 +92,15 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
   },
 };
 
-export const NODE_ORDER: NodeType[] = ["text", "image", "video", "textToImage", "textToVideo", "imageToVideo"];
+export const NODE_ORDER: NodeType[] = ["text", "image", "video", "promptEnhancer", "textToImage", "textToVideo", "imageToVideo"];
 
 export const GraphNodeDataSchema = z.looseObject({
-  /** text */
+  /** text; prompt enhancer: its (editable) result */
   text: z.string().optional(),
+  /** prompt enhancer: generator it writes for, extra instruction, input it was made from */
+  target: z.enum(["image", "video"]).optional(),
+  instruction: z.string().max(500).optional(),
+  source: z.string().optional(),
   /** image / video: the imported file */
   assetId: z.string().optional(),
   /** generators */
@@ -102,7 +115,7 @@ export type GraphNodeData = z.infer<typeof GraphNodeDataSchema>;
 
 export const GraphNodeSchema = z.object({
   id: z.string().min(1),
-  type: z.enum(["text", "image", "video", "textToImage", "textToVideo", "imageToVideo"]),
+  type: z.enum(["text", "image", "video", "promptEnhancer", "textToImage", "textToVideo", "imageToVideo"]),
   position: z.object({ x: z.number(), y: z.number() }),
   data: GraphNodeDataSchema,
 });

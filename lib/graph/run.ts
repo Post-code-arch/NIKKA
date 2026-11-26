@@ -4,6 +4,10 @@ import { desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import type { NodeRun, Take } from "@/db/schema";
 import { generateImage, generateVideo, uploadMedia } from "@/lib/atlas";
+import { isMockMode } from "@/lib/atlas/config";
+import { callJson } from "@/lib/digester/llm";
+import { estimateLlmUsd } from "@/lib/digester/service";
+import { z } from "zod";
 import { DEFAULT_CONFIRM_THRESHOLD_USD, estimateCostUsd, round } from "@/lib/cost/estimate";
 import { GenerationError } from "@/lib/generation/service";
 import { ensurePoller, refreshShotStatus } from "@/lib/jobs/poller";
@@ -32,7 +36,11 @@ export function nodeRunsOf(projectId: string): NodeRun[] {
 /** The project's canvas (empty until the user adds nodes) and its results. */
 export function getCanvas(projectId: string) {
   const project = loadProject(projectId);
-  return { graph: sanitizeGraph(project.canvas), runs: nodeRunsOf(projectId) };
+  return {
+    graph: sanitizeGraph(project.canvas),
+    runs: nodeRunsOf(projectId),
+    llm: { mock: isMockMode(), estimatedUsdPerCall: estimateLlmUsd(1000) },
+  };
 }
 
 /** Validates and stores an edited canvas. */
@@ -63,9 +71,19 @@ export function assetOf(node: GraphNode, runs: NodeRun[]): string | undefined {
   return undefined;
 }
 
+/** Text arriving on a node's prompt input (several links are joined in link order). */
+export function incomingText(graph: CanvasGraph, node: GraphNode): string {
+  return incoming(graph, node.id, "prompt")
+    .map((s) => s.data.text?.trim() ?? "")
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 export function resolvePrompt(graph: CanvasGraph, gen: GraphNode): string {
   const sources = incoming(graph, gen.id, "prompt");
   if (sources.length === 0) throw new GenerationError("Branche un node Texte sur l'entrée prompt", 400);
+  const pending = sources.find((s) => s.type === "promptEnhancer" && !s.data.text?.trim());
+  if (pending) throw new GenerationError("Le prompt enhancer branché n'a pas encore été lancé : clique sur « Améliorer »", 400);
   // Several Text nodes on the same input are joined in link order.
   const text = sources
     .map((s) => s.data.text?.trim() ?? "")
@@ -247,4 +265,37 @@ export function sendToShot(runId: string, shotId: string): Take {
   db.update(schema.nodeRuns).set({ sentTakeId: take.id, shotId }).where(eq(schema.nodeRuns.id, run.id)).run();
   refreshShotStatus(shotId);
   return take;
+}
+
+// --- prompt enhancer (LLM) ---------------------------------------------------------------
+
+const EnhanceSchema = z.object({ prompt: z.string().trim().min(1).max(4000) });
+
+/**
+ * Runs a Prompt enhancer node: the LLM rewrites the text on its input. The
+ * result is stored in the node (editable) and flows to its output.
+ */
+export async function enhanceNode(projectId: string, nodeId: string) {
+  const project = loadProject(projectId);
+  const graph = sanitizeGraph(project.canvas);
+  const node = graph.nodes.find((n) => n.id === nodeId);
+  if (!node || node.type !== "promptEnhancer") throw new GenerationError("Ce node n'est pas un prompt enhancer", 400);
+  const source = incomingText(graph, node);
+  if (!source) throw new GenerationError("Branche un node Texte (non vide) sur l'entrée prompt", 400);
+  const target = node.data.target ?? "image";
+  const instruction = node.data.instruction?.trim() ?? "";
+  const { prompt } = await callJson(
+    "enhance",
+    EnhanceSchema,
+    { brief: source, context: { target, instruction } },
+    { target, instruction: instruction || "none" },
+  );
+  // Re-read: the canvas may have been edited while the LLM answered.
+  const latest = sanitizeGraph(loadProject(projectId).canvas);
+  const current = latest.nodes.find((n) => n.id === nodeId);
+  if (current) {
+    current.data = { ...current.data, text: prompt, source };
+    getDb().update(schema.projects).set({ canvas: latest }).where(eq(schema.projects.id, projectId)).run();
+  }
+  return { text: prompt, source };
 }

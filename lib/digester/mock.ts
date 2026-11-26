@@ -311,6 +311,21 @@ function breakdown(ctx: Ctx, fr: boolean) {
   };
 }
 
+interface EnhanceCtx {
+  target?: "image" | "video";
+  instruction?: string;
+}
+
+/** Mock prompt enhancer: keeps the prompt word for word and adds generic craft terms. */
+function enhance(prompt: string, ctx: EnhanceCtx) {
+  const base = prompt.trim().replace(/[.\s]+$/, "");
+  const extra =
+    ctx.target === "video"
+      ? "slow cinematic camera movement, natural motion, consistent lighting, 24 fps film look"
+      : "cinematic composition, soft directional light, rich textures, 35 mm film grain, shallow depth of field";
+  return { prompt: `${base}. ${extra}${ctx.instruction ? `, ${ctx.instruction}` : ""}.` };
+}
+
 export function mockTask(task: DigestTask, input: { brief: string; context?: unknown }, vars: Record<string, string | number>): unknown {
   const fr = (vars.language ?? language(input.brief)) !== "en";
   const ctx = (input.context ?? {}) as Ctx;
@@ -332,5 +347,7 @@ export function mockTask(task: DigestTask, input: { brief: string; context?: unk
       return treatment(ctx, fr);
     case "breakdown":
       return breakdown(ctx, fr);
+    case "enhance":
+      return enhance(input.brief, (input.context ?? {}) as EnhanceCtx);
   }
 }

@@ -22,8 +22,8 @@ afterAll(async () => {
 const node = (id: string, type: CanvasGraph["nodes"][number]["type"], data = {}) => ({ id, type, position: { x: 0, y: 0 }, data });
 
 describe("node types", () => {
-  it("has exactly the six nodes", () => {
-    expect(NODE_ORDER).toEqual(["text", "image", "video", "textToImage", "textToVideo", "imageToVideo"]);
+  it("has the six base nodes plus the prompt enhancer", () => {
+    expect(NODE_ORDER).toEqual(["text", "image", "video", "promptEnhancer", "textToImage", "textToVideo", "imageToVideo"]);
     expect(NODE_ORDER.filter((t) => NODE_SPECS[t].model)).toEqual(["textToImage", "textToVideo", "imageToVideo"]);
   });
 
@@ -152,6 +152,33 @@ describe("project canvas (mock)", () => {
     });
     const r = await runNode(project.id, { nodeId: "v" });
     expect(String(r.runs[0].params.image)).toMatch(/^mock:\/\/upload\//);
+  });
+
+  it("prompt enhancer: LLM rewrites the text, the generator receives the enhanced prompt", async () => {
+    const { project } = await makeProject("Enhance");
+    const { writeGraph, runNode, enhanceNode, getCanvas } = await import("./run");
+    writeGraph(project.id, {
+      nodes: [node("t", "text", { text: "Un phare dans la tempête" }), node("e", "promptEnhancer", { target: "image" }), node("img", "textToImage")],
+      edges: [
+        { id: "e1", source: "t", sourceHandle: "text", target: "e", targetHandle: "prompt" },
+        { id: "e2", source: "e", sourceHandle: "text", target: "img", targetHandle: "prompt" },
+      ],
+    });
+    await expect(runNode(project.id, { nodeId: "img" })).rejects.toThrow(/pas encore été lancé/);
+    const r = await enhanceNode(project.id, "e");
+    expect(r.text.startsWith("Un phare dans la tempête")).toBe(true); // the original is kept
+    expect(r.text.length).toBeGreaterThan("Un phare dans la tempête".length);
+    expect(r.source).toBe("Un phare dans la tempête");
+    expect(getCanvas(project.id).graph.nodes.find((n) => n.id === "e")!.data.text).toBe(r.text);
+    const run = await runNode(project.id, { nodeId: "img" });
+    expect(run.runs[0].prompt).toBe(r.text);
+  });
+
+  it("prompt enhancer refuses an empty input", async () => {
+    const { project } = await makeProject("Enhance vide");
+    const { writeGraph, enhanceNode } = await import("./run");
+    writeGraph(project.id, { nodes: [node("e", "promptEnhancer")], edges: [] });
+    await expect(enhanceNode(project.id, "e")).rejects.toThrow(/Branche un node Texte/);
   });
 
   it("locked seed gives seed, seed+1… across variants", async () => {

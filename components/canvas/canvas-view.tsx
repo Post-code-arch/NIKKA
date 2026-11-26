@@ -45,7 +45,7 @@ const edgeTypes = { gradient: GradientEdge };
 const FIT = { padding: { top: "90px", bottom: "40px", left: "40px", right: "80px" } } as const;
 
 type RfNode = Node<GraphNodeData, NodeType>;
-type CanvasResponse = { graph: CanvasGraph; runs: NodeRun[] };
+type CanvasResponse = { graph: CanvasGraph; runs: NodeRun[]; llm: { mock: boolean; estimatedUsdPerCall: number } };
 /** A link dragged from a port and dropped on empty space: the new node gets linked to it. */
 type PendingLink = { nodeId: string; handleId: string; side: "source" | "target"; type: PortType };
 
@@ -108,6 +108,7 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<RfNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [runs, setRuns] = useState<NodeRun[]>([]);
+  const [llm, setLlm] = useState({ mock: true, estimatedUsdPerCall: 0 });
   const [loaded, setLoaded] = useState(false);
   const [palette, setPalette] = useState<{ x: number; y: number; flow: { x: number; y: number }; link?: PendingLink } | null>(null);
   const wrapper = useRef<HTMLDivElement>(null);
@@ -126,6 +127,7 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
       setNodes(flow.nodes);
       setEdges(flow.edges);
       setRuns(res.runs);
+      setLlm(res.llm);
       setLoaded(true);
       // An empty canvas starts at 100 % (fitting nothing would zoom in to the max).
       setTimeout(() => (res.graph.nodes.length ? rf.fitView(FIT) : rf.setViewport({ x: 80, y: 120, zoom: 1 })), 50);
@@ -236,7 +238,20 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
     project,
     models,
     runs,
+    llm,
     updateData,
+    inputText: (nodeId: string) =>
+      edges
+        .filter((e) => e.target === nodeId && e.targetHandle === "prompt")
+        .map((e) => nodes.find((n) => n.id === e.source)?.data.text?.trim() ?? "")
+        .filter(Boolean)
+        .join("\n\n"),
+    // Saved graph first, then the LLM; the result lands in the node (and downstream).
+    enhance: async (nodeId: string) => {
+      await flush();
+      const r = await api<{ text: string; source: string }>(`/api/projects/${project.id}/canvas/enhance`, { body: { nodeId } });
+      setNodes((ns) => ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, text: r.text, source: r.source } } : n)));
+    },
     // Run on the saved graph: flush edits first.
     run: (nodeId: string, variants: number) => void flush().then(() => run({ projectId: project.id, nodeId, variants })),
     sendToShot: (runId: string, shotId: string) =>

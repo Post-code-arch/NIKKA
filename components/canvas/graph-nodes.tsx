@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState } from "react";
 import type { NodeProps } from "@xyflow/react";
-import { ArrowRightToLine, Check, Film, ImagePlus, Lock, LockOpen, Minus, Plus, Sparkles, X } from "lucide-react";
+import { AlertTriangle, ArrowRightToLine, Check, Film, ImagePlus, Loader2, Lock, LockOpen, Minus, Plus, Sparkles, Wand2, X } from "lucide-react";
 import { NodeCard, NodeChip, NodeField, NodePanel, NodeValue } from "@/components/nodes/node-card";
 import { Port } from "@/components/nodes/port";
 import { Thumb } from "@/components/bible/view-thumb";
@@ -24,6 +24,11 @@ export interface GraphContextValue {
   run: (nodeId: string, variants: number) => void;
   sendToShot: (runId: string, shotId: string) => void;
   upload: (nodeId: string, file: File) => void;
+  /** Prompt enhancer: runs the LLM on the node's input. */
+  enhance: (nodeId: string) => Promise<void>;
+  /** Text currently arriving on a node's prompt input. */
+  inputText: (nodeId: string) => string;
+  llm: { mock: boolean; estimatedUsdPerCall: number };
 }
 
 export const GraphContext = createContext<GraphContextValue | null>(null);
@@ -137,6 +142,84 @@ function ImportNode({ data, id, type, selected }: Props) {
 
 export const ImageNode = (p: Props) => <ImportNode {...p} type="image" />;
 export const VideoNode = (p: Props) => <ImportNode {...p} type="video" />;
+
+// --- Prompt enhancer (LLM) -------------------------------------------------------------
+
+export function PromptEnhancerNode({ data, id, selected }: Props) {
+  const { updateData, enhance, inputText, llm } = useGraph();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState(data.text ?? "");
+  const [base, setBase] = useState(data.text ?? "");
+  if (base !== (data.text ?? "")) {
+    setBase(data.text ?? "");
+    setDraft(data.text ?? "");
+  }
+  const input = inputText(id);
+  const stale = !!data.text && data.source !== undefined && data.source !== input;
+  const run = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await enhance(id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <NodeCard
+      title="Prompt enhancer"
+      width={300}
+      glow={busy ? PORT_COLOR.text : selected ? "var(--ring)" : undefined}
+      action={
+        <NodeChip className="nodrag" onClick={() => void run()} disabled={busy || !input}>
+          {busy ? <Loader2 className="animate-spin" /> : <Wand2 />} {data.text ? "Relancer" : "Améliorer"}
+        </NodeChip>
+      }
+    >
+      <NodePanel className="space-y-2">
+        <Ports type="promptEnhancer" />
+        <NodeField label="Pour">
+          <select
+            value={data.target ?? "image"}
+            onChange={(e) => updateData(id, { target: e.target.value as "image" | "video" })}
+            className="nodrag h-7 rounded-md bg-surface px-1.5 text-[11px] outline-none"
+          >
+            <option value="image">une image</option>
+            <option value="video">une vidéo</option>
+          </select>
+        </NodeField>
+        <input
+          defaultValue={data.instruction ?? ""}
+          key={data.instruction ?? ""}
+          onBlur={(e) => e.target.value !== (data.instruction ?? "") && updateData(id, { instruction: e.target.value || undefined })}
+          placeholder="Consigne (optionnel) : plus sombre, style anime…"
+          className="nodrag h-7 w-full rounded-md bg-surface px-2 text-[11px] outline-none placeholder:text-muted-foreground/50"
+        />
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => draft !== (data.text ?? "") && updateData(id, { text: draft })}
+          rows={6}
+          placeholder={input ? "Clique sur « Améliorer » : le prompt enrichi apparaît ici, modifiable." : "Branche un node Texte sur l'entrée prompt."}
+          className="nodrag nowheel w-full resize-none rounded-md bg-surface p-2 text-[11px] leading-relaxed outline-none placeholder:text-muted-foreground/50"
+        />
+        {stale && (
+          <p className="text-[10px] text-origin-proposed">
+            <AlertTriangle className="mr-1 inline size-3" />
+            Le texte d&apos;entrée a changé : relance pour le prendre en compte.
+          </p>
+        )}
+        {error && <p className="text-[10px] text-destructive">{error}</p>}
+        <div className="text-[10px] text-muted-foreground">
+          LLM · {llm.mock ? "gratuit (mock)" : `≈ ${formatUsd(llm.estimatedUsdPerCall)} par appel`}
+        </div>
+      </NodePanel>
+    </NodeCard>
+  );
+}
 
 // --- Generators ------------------------------------------------------------------------
 
@@ -348,6 +431,7 @@ export const graphNodeTypes = {
   text: TextNode,
   image: ImageNode,
   video: VideoNode,
+  promptEnhancer: PromptEnhancerNode,
   textToImage: TextToImageNode,
   textToVideo: TextToVideoNode,
   imageToVideo: ImageToVideoNode,
@@ -359,6 +443,7 @@ const GROUP: Record<NodeType, string> = {
   text: "Entrées",
   image: "Entrées",
   video: "Entrées",
+  promptEnhancer: "Texte",
   textToImage: "Génération",
   textToVideo: "Génération",
   imageToVideo: "Génération",
