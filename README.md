@@ -87,6 +87,14 @@ Onglet **Brief** : colle un brief (une phrase, un concept, un découpage complet
 - **Filtres** par statut, personnage, lieu (le glisser-déposer est désactivé pendant un filtre).
 - **Animatique** d'une séquence : enchaîne les prises retenues aux durées des plans (vidéo, ou image fixe avec zoom lent, ou texte de l'action si pas d'image). Espace = pause, Échap = fermer.
 
+### Exporter / importer un projet
+
+Menu des projets (en haut, au centre) :
+- **Exporter « … »** télécharge un fichier `.nikka.zip` avec tout le projet : brief, storyboard, bible (vues comprises), canvas, prises, résultats et médias.
+- **Importer un projet (.nikka.zip)…** le recrée comme un nouveau projet (nouveaux identifiants, nom suffixé « (importé) » s'il existe déjà). Les médias déjà présents (même contenu) ne sont pas dupliqués. Une génération encore en cours au moment de l'export est importée comme échouée.
+
+Pratique pour sauvegarder un projet, le passer d'un Mac à un autre, ou récupérer des projets faits ailleurs.
+
 ## Organisation
 
 - `lib/atlas` — client Atlas côté serveur uniquement : upload, génération, polling (backoff + timeout), téléchargement dans `storage/assets/<sha256>.<ext>`, catalogue et schémas d'entrée des modèles, LLM (SDK `openai`), mode mock.

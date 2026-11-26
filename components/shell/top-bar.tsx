@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Loader2, Play, Plus, Wallet, X } from "lucide-react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Download, Loader2, Play, Plus, Upload, Wallet, X } from "lucide-react";
 import { IconPill, Island, Pill, pillClass } from "@/components/ui/pill";
 import { formatUsd } from "@/lib/cost/estimate";
 import { inFlightCount, useProjectStore } from "@/lib/store/project-store";
@@ -17,8 +17,30 @@ const VIEWS = [
 ] as const;
 
 function ProjectMenu({ onClose }: { onClose: () => void }) {
-  const { projects, currentProjectId, selectProject, createProject } = useProjectStore();
+  const { projects, currentProjectId, selectProject, createProject, loadProjects } = useProjectStore();
   const [name, setName] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const current = projects.find((p) => p.id === currentProjectId);
+
+  const importFile = async (file: File) => {
+    setImporting(true);
+    setImportError(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/projects/import", { method: "POST", body: form });
+      const body = (await res.json()) as { id?: string; error?: string };
+      if (!res.ok || !body.id) throw new Error(body.error ?? "Import impossible");
+      await loadProjects();
+      await selectProject(body.id);
+      onClose();
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImporting(false);
+    }
+  };
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -66,6 +88,35 @@ function ProjectMenu({ onClose }: { onClose: () => void }) {
           <Plus />
         </IconPill>
       </form>
+      <div className="mt-1 border-t pt-1">
+        {current && (
+          <a
+            href={`/api/projects/${current.id}/export`}
+            download
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-surface-2"
+            title="Un fichier .nikka.zip avec tout le projet : storyboard, bible, canvas, prises et médias"
+          >
+            <Download className="size-3.5 text-muted-foreground" />
+            <span className="truncate">Exporter « {current.name} »</span>
+          </a>
+        )}
+        <label className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-surface-2">
+          {importing ? <Loader2 className="size-3.5 animate-spin text-muted-foreground" /> : <Upload className="size-3.5 text-muted-foreground" />}
+          {importing ? "Import en cours…" : "Importer un projet (.nikka.zip)…"}
+          <input
+            type="file"
+            accept=".zip,application/zip"
+            hidden
+            disabled={importing}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void importFile(f);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        {importError && <p className="px-2 pb-1 text-[11px] text-destructive">{importError}</p>}
+      </div>
     </div>
   );
 }
