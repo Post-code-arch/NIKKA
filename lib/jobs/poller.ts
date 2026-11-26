@@ -143,9 +143,12 @@ async function pollJob(job: Job): Promise<void> {
   }
   if (assetIds.length === 0) return finishFailed(job, "Aucun média image/vidéo dans la sortie");
 
-  if (job.takeId) completeTake(job, job.takeId, assetIds, attempts);
-  else if (job.refGenerationId) completeRefGeneration(job, job.refGenerationId, assetIds, attempts);
-  else if (job.nodeRunId) completeNodeRun(job, job.nodeRunId, assetIds, attempts);
+  // Atlas reports the billed price of the prediction: the real cost, when given.
+  const billed = Number(data.price);
+  const actualUsd = Number.isFinite(billed) && billed >= 0 && !mock ? billed : undefined;
+  if (job.takeId) completeTake(job, job.takeId, assetIds, attempts, actualUsd);
+  else if (job.refGenerationId) completeRefGeneration(job, job.refGenerationId, assetIds, attempts, actualUsd);
+  else if (job.nodeRunId) completeNodeRun(job, job.nodeRunId, assetIds, attempts, actualUsd);
 }
 
 function markJobDone(tx: Pick<ReturnType<typeof getDb>, "update">, job: Job, attempts: number) {
@@ -155,14 +158,14 @@ function markJobDone(tx: Pick<ReturnType<typeof getDb>, "update">, job: Job, att
     .run();
 }
 
-function completeTake(job: Job, takeId: string, assetIds: string[], attempts: number) {
+function completeTake(job: Job, takeId: string, assetIds: string[], attempts: number, actualUsd?: number) {
   const db = getDb();
   const take = db.select().from(schema.takes).where(eq(schema.takes.id, takeId)).get();
   if (!take) return;
   db.transaction((tx) => {
     // V1: actual cost = estimate (PRD §11).
     tx.update(schema.takes)
-      .set({ status: "completed", assetId: assetIds[0], costActualUsd: take.costEstimatedUsd, error: null })
+      .set({ status: "completed", assetId: assetIds[0], costActualUsd: actualUsd ?? take.costEstimatedUsd, error: null })
       .where(eq(schema.takes.id, take.id))
       .run();
     // Extra outputs become sibling takes so nothing is lost.
@@ -189,13 +192,13 @@ function completeTake(job: Job, takeId: string, assetIds: string[], attempts: nu
   refreshShotStatus(take.shotId);
 }
 
-function completeRefGeneration(job: Job, genId: string, assetIds: string[], attempts: number) {
+function completeRefGeneration(job: Job, genId: string, assetIds: string[], attempts: number, actualUsd?: number) {
   const db = getDb();
   const gen = db.select().from(schema.refGenerations).where(eq(schema.refGenerations.id, genId)).get();
   if (!gen) return;
   db.transaction((tx) => {
     tx.update(schema.refGenerations)
-      .set({ status: "completed", assetId: assetIds[0], costActualUsd: gen.costEstimatedUsd, error: null })
+      .set({ status: "completed", assetId: assetIds[0], costActualUsd: actualUsd ?? gen.costEstimatedUsd, error: null })
       .where(eq(schema.refGenerations.id, gen.id))
       .run();
     // Extra outputs become extra candidates for the same view.
@@ -221,13 +224,13 @@ function completeRefGeneration(job: Job, genId: string, assetIds: string[], atte
   });
 }
 
-function completeNodeRun(job: Job, runId: string, assetIds: string[], attempts: number) {
+function completeNodeRun(job: Job, runId: string, assetIds: string[], attempts: number, actualUsd?: number) {
   const db = getDb();
   const run = db.select().from(schema.nodeRuns).where(eq(schema.nodeRuns.id, runId)).get();
   if (!run) return;
   db.transaction((tx) => {
     tx.update(schema.nodeRuns)
-      .set({ status: "completed", assetId: assetIds[0], costActualUsd: run.costEstimatedUsd, error: null })
+      .set({ status: "completed", assetId: assetIds[0], costActualUsd: actualUsd ?? run.costEstimatedUsd, error: null })
       .where(eq(schema.nodeRuns.id, run.id))
       .run();
     // Extra outputs become extra results of the same node.
