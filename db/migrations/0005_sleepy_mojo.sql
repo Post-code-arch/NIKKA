@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `digest` text DEFAULT '{}' NOT NULL;

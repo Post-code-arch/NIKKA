@@ -31,6 +31,11 @@ export const projects = sqliteTable("projects", {
   briefRaw: text("brief_raw").notNull().default(""),
   maturity: integer("maturity").notNull().default(1),
   concept: text("concept", { mode: "json" }).$type<DigestedConcept | null>(),
+  /** Brief digester state (diagnosis, idea, proposals, treatment, breakdown). */
+  digest: text("digest", { mode: "json" })
+    .$type<Record<string, unknown>>()
+    .notNull()
+    .default({}),
   settings: text("settings", { mode: "json" })
     .$type<ProjectSettings>()
     .notNull()

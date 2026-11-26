@@ -36,6 +36,13 @@
       "when": 1795612242357,
       "tag": "0004_parched_secret_warriors",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1795677504938,
+      "tag": "0005_sleepy_mojo",
+      "breakpoints": true
     }
   ]
 }

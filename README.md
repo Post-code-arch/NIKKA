@@ -62,6 +62,17 @@ Le **Storyboard** reste la voie rigide (Image clé, Animer, fiche du plan). Le *
 - Chaque node de génération a son modèle, sa durée (vidéo), son seed (avec verrou), ses variantes (confirmation du total pour tout lot) et son coût estimé. Ses **résultats restent dans le canvas** : clique sur une vignette pour choisir celle qui part vers les nodes suivants.
 - Optionnel : **Envoyer au plan…** propose la liste des plans du storyboard ; le résultat devient une prise de ce plan.
 
+### Brief digester (phase 5)
+
+Onglet **Brief** : colle un brief (une phrase, un concept, un découpage complet) puis **Analyser le brief**.
+- **Jauge de maturité** : idée → concept → traitement → découpage, avec ce qui manque à chaque niveau.
+- Ce que le brief contient est **extrait** tel quel (badge gris) ; le premier niveau manquant est **proposé** (ambre). Depuis une simple idée : 2 à 3 pistes de concept, tu en choisis une.
+- Chaque champ s'édite sur place (il passe en **validé**, vert). **Valider ce niveau**, **Régénérer**, **Descendre au niveau suivant**.
+- Valider le **traitement** crée les références de la bible (sans images ; une référence existante n'est jamais réécrite). Valider le **découpage** crée les séquences et les plans, avec leurs références, leur caméra et leur durée. Rien n'est généré en image ou en vidéo.
+- Un découpage collé tel quel est reconnu niveau 4 et peut être validé directement, sans rien inventer au-dessus.
+- Les prompts du LLM sont dans `lib/digester/prompts/*.md`, modifiables sans recompiler. Sorties validées par Zod, une seule nouvelle tentative avec l'erreur.
+- Mode mock : lecture par règles et propositions gabarits « [mock] », gratuites. En réel : `NIKKA_LLM_MODEL` dans `.env.local` ; le coût estimé d'un appel s'affiche sous le bouton. Exemples de sorties : `docs/digester-samples.md`.
+
 ## Organisation
 
 - `lib/atlas` — client Atlas côté serveur uniquement : upload, génération, polling (backoff + timeout), téléchargement dans `storage/assets/<sha256>.<ext>`, catalogue et schémas d'entrée des modèles, LLM (SDK `openai`), mode mock.
@@ -71,6 +82,7 @@ Le **Storyboard** reste la voie rigide (Image clé, Animer, fiche du plan). Le *
 - `lib/camera` — vocabulaire caméra : libellés FR, formulation anglaise par valeur, surcharges et capacités par modèle (`phrasing.ts`).
 - `lib/prompt` — assemblage du prompt d'un plan (`build.ts`) et aperçu par étape (`shot.ts`).
 - `lib/graph` — les 6 nodes et leurs ports (`types.ts`), moteur serveur du canvas du projet (`run.ts`) : résultats (`node_runs`) et envoi optionnel à un plan.
+- `lib/digester` — digester du brief : schémas Zod, prompts en fichiers séparés, appel LLM avec une nouvelle tentative, mock par règles, création des références et des plans.
 - `lib/refs` — sélection automatique des vues selon l'échelle du plan (`select.ts`, testé), assistant de pack (`pack.ts`), libellés des vues.
 - `app/api` — routes CRUD projets / séquences / plans / références, génération, `/api/jobs`, `/api/assets/:id`.
 - `storage/assets`, `data` — médias et base locale (non versionnés).
