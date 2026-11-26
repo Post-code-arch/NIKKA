@@ -104,7 +104,7 @@ describe("shot prompt preview (mock)", () => {
 
     const models = { keyframe: "mock/edit-multi-ref", video: "mock/image-to-video" };
     const close = shotPromptPreview(shot.id, models)!;
-    expect(close.keyframe.prompt).toBe("Femme au manteau rouge. Lina attend sur le quai. Close-up on the face.");
+    expect(close.keyframe.prompt).toBe("Femme au manteau rouge. Lina attend sur le quai. Close-up shot.");
     expect(close.video.prompt).toMatch(/orbits around the subject/);
     expect(close.references!.picked.map((p) => p.view)).toEqual(["face_front"]);
     expect(close.movement.supported).toBe(false);

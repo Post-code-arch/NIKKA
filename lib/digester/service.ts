@@ -308,7 +308,9 @@ function applyBreakdown(projectId: string, state: DigestState) {
       .get();
     ids.push(seq.id);
     s.shots.forEach((sh, j) => {
-      const shotRefs = sh.refs.map(refByName).filter((r): r is NonNullable<typeof r> => !!r);
+      // The treatment's looks apply to every shot (art direction), besides the entities it shows.
+      const looks = refs.filter((r) => r.tag === "look" && state.treatment?.entities.some((e) => e.tag === "look" && same(e.name, r.name)));
+      const shotRefs = [...sh.refs.map(refByName).filter((r): r is NonNullable<typeof r> => !!r), ...looks];
       db.insert(schema.shots)
         .values({
           sequenceId: seq.id,

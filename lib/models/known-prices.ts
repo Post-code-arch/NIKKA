@@ -10,4 +10,6 @@ export const KNOWN_PRICES: Record<string, number> = {
   "bytedance/seedream-v5.0-lite/edit": 0.0315,
   // 5 s, default resolution: billed 0.09 → 0.018 / s (catalog 0.009)
   "bytedance/seedance-v1-pro-fast/image-to-video": 0.018,
+  // text → video, 5 s: billed 0.09 → 0.018 / s (catalog 0.009)
+  "bytedance/seedance-v1-pro-fast/text-to-video": 0.018,
 };

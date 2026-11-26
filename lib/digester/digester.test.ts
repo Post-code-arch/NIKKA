@@ -54,6 +54,9 @@ describe("digester (mock)", () => {
     expect(shots.length).toBeGreaterThan(0);
     expect(shots.some((s) => s.refIds.length > 0)).toBe(true);
     expect(shots.every((s) => s.camera.origin === "validated")).toBe(true);
+    // The treatment's look (art direction) is wired on every shot.
+    const look = refs.find((r) => r.tag === "look")!;
+    expect(shots.every((s) => s.refIds.includes(look.id))).toBe(true);
 
     // Re-validating the breakdown replaces what it created, nothing is doubled.
     validateLevel(p.id, 4);

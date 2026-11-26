@@ -23,8 +23,8 @@ export const GENERIC_PHRASES: Record<CameraKey, string> = {
   "scale.medium": "medium shot, framed from the waist up",
   "scale.cowboy": "cowboy shot, framed from mid-thigh up",
   "scale.medium_close": "medium close-up, framed from the chest up",
-  "scale.close": "close-up on the face",
-  "scale.extreme_close": "extreme close-up on a facial detail",
+  "scale.close": "close-up shot",
+  "scale.extreme_close": "extreme close-up on a detail",
   "scale.insert": "insert shot, tight detail of an object",
 
   "angle.eye_level": "eye-level camera",

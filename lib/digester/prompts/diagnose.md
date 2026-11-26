@@ -1,5 +1,7 @@
 TASK: DIAGNOSE (no extraction, no invention).
 
+Write "summary" and every gap in the language of the brief (French brief → French text).
+
 Read the brief and decide the highest maturity level it fully covers (1 to 4), the language it is written in, and what is missing for each level above 1.
 
 Return:

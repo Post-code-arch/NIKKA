@@ -10,7 +10,10 @@ import { assetUrl } from "@/lib/store/api";
 /** The take a shot shows: the retained one, else the latest completed (video first). */
 export function shownTake(shot: SequenceTree["shots"][number]): Take | undefined {
   const done = shot.takes.filter((t) => t.status === "completed" && t.assetId);
-  return done.find((t) => t.id === shot.selectedTakeId) ?? done.find((t) => t.stage === "video") ?? done[0];
+  const retained = done.find((t) => t.id === shot.selectedTakeId);
+  // A retained keyframe that was animated plays as its video.
+  const animated = retained && retained.stage !== "video" ? done.find((t) => t.stage === "video" && t.parentTakeId === retained.id) : undefined;
+  return animated ?? retained ?? done.find((t) => t.stage === "video") ?? done[0];
 }
 
 /**
