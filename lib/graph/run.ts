@@ -225,7 +225,20 @@ export async function runNode(projectId: string, opts: RunOptions): Promise<{ es
     if (!sourceId) throw new GenerationError("Il faut une vidéo source : branche un node Vidéo ou une vidéo générée", 400);
     const src = getDb().select().from(schema.assets).where(eq(schema.assets.id, sourceId)).get();
     if (src?.kind !== "video") throw new GenerationError("L'entrée « vidéo source » doit recevoir une vidéo", 400);
+    if (model.kind === "r2v" && !model.maxReferenceVideos) {
+      throw new GenerationError(`${model.label} n'accepte pas de vidéo en référence : choisis un modèle marqué « vidéo réf »`, 400);
+    }
     generic.sourceVideoUrl = await uploadAsset(sourceId);
+  }
+
+  // References → video: images and/or videos as references.
+  if (node.type === "referenceToVideo") {
+    const videoIds = [...new Set(wired("videos").flatMap((n) => assetsOf(n, runs)))];
+    if (videoIds.length && !model.maxReferenceVideos) {
+      throw new GenerationError(`${model.label} n'accepte pas de vidéos de référence : choisis un modèle marqué « vidéo réf »`, 400);
+    }
+    if (!refIds.length && !videoIds.length) throw new GenerationError("Branche au moins une image ou une vidéo de référence", 400);
+    if (videoIds.length) generic.referenceVideoUrls = await Promise.all(videoIds.slice(0, model.maxReferenceVideos).map(uploadAsset));
   }
 
   // Negative prompt: only models whose schema has one.

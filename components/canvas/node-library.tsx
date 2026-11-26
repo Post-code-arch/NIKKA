@@ -21,6 +21,7 @@ const ICON: Record<NodeType, LucideIcon> = {
   textToVideo: Clapperboard,
   imageToVideo: Video,
   videoToVideo: Film,
+  referenceToVideo: Library,
 };
 
 /** Colour of the node's main output, so the library reads like the ports. */

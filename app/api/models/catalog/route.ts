@@ -7,6 +7,7 @@ import { availableLlms, availableModels } from "@/lib/models/registry";
 
 export interface ModelCaps {
   refs?: number;
+  videoRefs?: number;
   negative?: boolean;
   startEnd?: boolean;
   seed?: boolean;
@@ -35,7 +36,9 @@ async function capsOf(m: CatalogModel) {
   let out: { caps: ModelCaps | null; incompatible?: string };
   try {
     const e = entryFromDescriptor(describe(m, await getModelInputSchema(m), unitPrice(m)));
-    out = { caps: { refs: e.maxReferenceImages, negative: e.supportsNegativePrompt, startEnd: e.supportsStartEndFrames, seed: e.supportsSeed } };
+    out = {
+      caps: { refs: e.maxReferenceImages, videoRefs: e.maxReferenceVideos, negative: e.supportsNegativePrompt, startEnd: e.supportsStartEndFrames, seed: e.supportsSeed },
+    };
   } catch (err) {
     out = { caps: null, incompatible: err instanceof Error ? err.message : String(err) };
   }

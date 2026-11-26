@@ -28,6 +28,8 @@ export interface ModelDescriptor {
     images?: { name: string; array: boolean; max: number };
     /** Source video of a video → video model (string, or array of one). */
     video?: { name: string; array: boolean };
+    /** Reference videos (array). `mixed`: one array for images and videos (MiniMax "refers"). */
+    videoRefs?: { name: string; max: number; mixed?: boolean };
     startImage?: string;
     endImage?: string;
     duration?: { name: string; values: number[] };
@@ -65,8 +67,10 @@ export function classify(m: Pick<CatalogModel, "model" | "type">): ModelKind | n
     // Video in, video out (restyle / edit). Sound-only, extend, upscale and reframe are other tools.
     if (/music|sound|sfx|audio/.test(id)) return null;
     if (/video-to-video|video-edit|edit-video|\/v2v\b|restyle/.test(id)) return "v2v";
-    if (/image-to-video|\/i2v\b|start-end|first-last/.test(id)) return "i2v";
-    if (/text-to-video|\/t2v\b/.test(id)) return "t2v";
+    // Images (and, for some, videos) as references: Seedance 2.x, Kling, Vidu, MiniMax…
+    if (/reference-to-video|\/r2v\b/.test(id)) return "r2v";
+    if (/image-to-video|(^|[/-])i2v([/-]|$)|start-end|first-last/.test(id)) return "i2v";
+    if (/text-to-video|(^|[/-])t2v([/-]|$)/.test(id)) return "t2v";
     return null;
   }
   return null;
@@ -136,12 +140,32 @@ export function describe(m: CatalogModel, schema: ModelInputSchema, price: { usd
       fields.images = { name: claim(refs)!, array: true, max: Math.min(16, p.maxItems ?? 4) };
     }
   }
+  if (kind === "r2v") {
+    const imgs = findField(schema, REF_ARRAY_FIELDS);
+    if (imgs) {
+      const p = props[imgs] as SchemaProperty & { maxItems?: number };
+      fields.images = { name: claim(imgs)!, array: true, max: Math.min(16, p.maxItems ?? 4) };
+    }
+    const vids = findField(schema, ["reference_videos", "video_references", "ref_videos"]);
+    if (vids) {
+      const p = props[vids] as SchemaProperty & { maxItems?: number };
+      fields.videoRefs = { name: claim(vids)!, max: Math.min(8, p.maxItems ?? 1) };
+    }
+    // One list for every kind of reference (images and videos).
+    if (!imgs && !vids && props.refers) {
+      const p = props.refers as SchemaProperty & { maxItems?: number };
+      fields.images = { name: claim("refers")!, array: true, max: Math.min(16, p.maxItems ?? 4) };
+      fields.videoRefs = { name: "refers", max: Math.min(16, p.maxItems ?? 4), mixed: true };
+    }
+    if (!fields.images && !fields.videoRefs) throw new Error(`${m.model} : aucun champ de référence dans le schéma`);
+    // Optional first frame (Kling): not used by NIKKA, never required.
+  }
   if (kind === "i2v") {
     fields.startImage = claim(findField(schema, START_IMAGE_FIELDS));
     if (!fields.startImage) throw new Error(`${m.model} : aucun champ d'image de départ dans le schéma`);
     fields.endImage = claim(findField(schema, END_IMAGE_FIELDS));
   }
-  if (kind === "i2v" || kind === "t2v" || kind === "v2v") {
+  if (kind === "i2v" || kind === "t2v" || kind === "v2v" || kind === "r2v") {
     const d = props.duration;
     if (d) {
       let values = numericEnum(d);
@@ -171,7 +195,7 @@ export function describe(m: CatalogModel, schema: ModelInputSchema, price: { usd
   if (unfilled.length) throw new Error(`${m.model} : champs requis non pris en charge (${unfilled.join(", ")})`);
   if (!fields.prompt && kind !== "i2v") throw new Error(`${m.model} : pas de champ prompt`);
 
-  const video = kind === "i2v" || kind === "t2v" || kind === "v2v";
+  const video = kind === "i2v" || kind === "t2v" || kind === "v2v" || kind === "r2v";
   const unit = price?.unit === "image" || price?.unit === "second" ? price.unit : video ? "second" : "image";
   const usd = price?.usd ?? 0;
   return {
@@ -203,6 +227,7 @@ export function entryFromDescriptor(d: ModelDescriptor): ModelEntry {
     supportsSeed: !!f.seed,
     supportsNegativePrompt: !!f.negativePrompt,
     maxReferenceImages: f.images?.max,
+    maxReferenceVideos: f.videoRefs?.max,
     supportsStartEndFrames: !!f.endImage,
     durations: f.duration?.values,
     mapInputs: (g: GenericInputs) => {
@@ -215,6 +240,13 @@ export function entryFromDescriptor(d: ModelDescriptor): ModelEntry {
       }
       if (f.startImage && g.startImageUrl) body[f.startImage] = g.startImageUrl;
       if (f.video && g.sourceVideoUrl) body[f.video.name] = f.video.array ? [g.sourceVideoUrl] : g.sourceVideoUrl;
+      // Reference → video used as video → video: the source video is the first reference video.
+      const refVideos = [...(!f.video && g.sourceVideoUrl ? [g.sourceVideoUrl] : []), ...(g.referenceVideoUrls ?? [])];
+      if (f.videoRefs && refVideos.length) {
+        const vids = refVideos.slice(0, f.videoRefs.max);
+        if (f.videoRefs.mixed) body[f.videoRefs.name] = [...((body[f.videoRefs.name] as string[] | undefined) ?? []), ...vids].slice(0, f.videoRefs.max);
+        else body[f.videoRefs.name] = vids;
+      }
       if (f.endImage && g.endImageUrl) body[f.endImage] = g.endImageUrl;
       if (f.duration && g.durationSec) body[f.duration.name] = closest(f.duration.values, g.durationSec);
       return body;

@@ -374,6 +374,8 @@ function GeneratorNode({ data, id, type, selected }: Props) {
     !hasRefs && model?.kind === "i2i" && "ce modèle d'édition a besoin d'images sur « références »",
     wired(id, "negative") && model && !model.supportsNegativePrompt && "ce modèle n'accepte pas de prompt négatif",
     wired(id, "end") && model && !model.supportsStartEndFrames && "ce modèle n'accepte pas d'image de fin",
+    type === "videoToVideo" && model?.kind === "r2v" && !model.maxReferenceVideos && "ce modèle n'accepte pas de vidéo en référence",
+    wired(id, "videos") && model && !model.maxReferenceVideos && "ce modèle n'accepte pas de vidéos de référence",
   ].filter((x): x is string => !!x);
   const durations = model?.durations ?? [];
   const duration = data.durationSec ?? durations[0] ?? 5;
@@ -506,6 +508,7 @@ export const TextToImageNode = (p: Props) => <GeneratorNode {...p} type="textToI
 export const TextToVideoNode = (p: Props) => <GeneratorNode {...p} type="textToVideo" />;
 export const ImageToVideoNode = (p: Props) => <GeneratorNode {...p} type="imageToVideo" />;
 export const VideoToVideoNode = (p: Props) => <GeneratorNode {...p} type="videoToVideo" />;
+export const ReferenceToVideoNode = (p: Props) => <GeneratorNode {...p} type="referenceToVideo" />;
 
 export const graphNodeTypes = {
   text: TextNode,
@@ -518,6 +521,7 @@ export const graphNodeTypes = {
   textToVideo: TextToVideoNode,
   imageToVideo: ImageToVideoNode,
   videoToVideo: VideoToVideoNode,
+  referenceToVideo: ReferenceToVideoNode,
 };
 
 // --- Palette ---------------------------------------------------------------------------
@@ -533,6 +537,7 @@ export const GROUP: Record<NodeType, string> = {
   textToVideo: "Génération",
   imageToVideo: "Génération",
   videoToVideo: "Génération",
+  referenceToVideo: "Génération",
 };
 
 export function NodePalette({

@@ -1,6 +1,6 @@
 import type { CameraCapabilities } from "@/lib/camera/phrasing";
 
-export type ModelKind = "t2i" | "i2i" | "t2v" | "i2v" | "v2v" | "llm";
+export type ModelKind = "t2i" | "i2i" | "t2v" | "i2v" | "v2v" | "r2v" | "llm";
 export type ModelTier = "sketch" | "draft" | "quality";
 
 /** NIKKA-side inputs, mapped to each model's own schema by `mapInputs`. */
@@ -13,6 +13,8 @@ export interface GenericInputs {
   startImageUrl?: string;
   /** Video to transform (video → video). */
   sourceVideoUrl?: string;
+  /** Reference videos (reference → video: motion, style, edit, extension). */
+  referenceVideoUrls?: string[];
   endImageUrl?: string;
   durationSec?: number;
   aspectRatio?: string;
@@ -27,6 +29,8 @@ export interface ModelEntry {
   label: string;
   kind: ModelKind;
   maxReferenceImages?: number;
+  /** Reference → video models that also take videos as references. */
+  maxReferenceVideos?: number;
   supportsStartEndFrames?: boolean;
   supportsSeed?: boolean;
   supportsNegativePrompt?: boolean;

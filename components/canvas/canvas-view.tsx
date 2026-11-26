@@ -144,6 +144,8 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
     latest.current = { nodes, edges };
   }, [nodes, edges]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Undo / redo history of the graph (see `record`). */
+  const history = useRef<{ stack: string[]; index: number }>({ stack: [], index: -1 });
   const url = `/api/projects/${project.id}/canvas`;
 
   const loadRuns = useCallback(() => api<CanvasResponse>(url).then((r) => setRuns(r.runs)), [url]);
@@ -153,6 +155,7 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
       const flow = toFlow(res.graph);
       setNodes(flow.nodes);
       setEdges(flow.edges);
+      history.current = { stack: [JSON.stringify(res.graph)], index: 0 };
       setRuns(res.runs);
       setLlm(res.llm);
       setLoaded(true);
@@ -173,7 +176,24 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
   }, [pending, loadRuns]);
 
   const graphNow = () => fromFlow(latest.current.nodes, latest.current.edges);
-  const flush = useCallback(() => api(url, { method: "PUT", body: { graph: fromFlow(latest.current.nodes, latest.current.edges) } }), [url]);
+
+  /**
+   * Undo / redo: every saved state of the graph (nodes, positions, settings,
+   * links) is kept, up to 100. Results are never undone (they were paid).
+   */
+  const record = (graph: CanvasGraph) => {
+    const { stack, index } = history.current;
+    const snap = JSON.stringify(graph);
+    if (stack[index] === snap) return;
+    const next = [...stack.slice(0, index + 1), snap].slice(-100);
+    history.current = { stack: next, index: next.length - 1 };
+  };
+
+  const flush = useCallback(() => {
+    const graph = fromFlow(latest.current.nodes, latest.current.edges);
+    record(graph);
+    return api(url, { method: "PUT", body: { graph } });
+  }, [url]);
 
   const save = useCallback(
     (immediate = false) => {
@@ -331,13 +351,42 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
     addNode(type, { x: at.x - 130, y: at.y - 40 });
   };
 
-  // Keyboard: Cmd/Ctrl+A select all, Cmd/Ctrl+D duplicate, Escape clear (never while typing).
+  /** Moves through the history and saves the restored state (without recording it again). */
+  const travel = (step: -1 | 1) => {
+    // A change still waiting to be saved is recorded first, so it can be undone too.
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      record(graphNow());
+    }
+    const { stack, index } = history.current;
+    const next = index + step;
+    if (next < 0 || next >= stack.length) return;
+    history.current = { stack, index: next };
+    const graph = JSON.parse(stack[next]) as CanvasGraph;
+    const flow = toFlow(graph);
+    setNodes(flow.nodes);
+    setEdges(flow.edges);
+    setMenu(null);
+    setPalette(null);
+    void api(url, { method: "PUT", body: { graph } });
+  };
+
+  // Keyboard: Cmd/Ctrl+Z undo, Cmd/Ctrl+Shift+Z or Ctrl+Y redo, Cmd/Ctrl+A select all,
+  // Cmd/Ctrl+D duplicate, Escape clear. Inside a text field, the field's own undo applies.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
       if (el.closest?.("input, textarea, select, [contenteditable=true]")) return;
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key.toLowerCase() === "a") {
+      const key = e.key.toLowerCase();
+      if (mod && key === "z") {
+        e.preventDefault();
+        travel(e.shiftKey ? 1 : -1);
+      } else if (mod && key === "y") {
+        e.preventDefault();
+        travel(1);
+      } else if (mod && e.key.toLowerCase() === "a") {
         e.preventDefault();
         selectAll();
       } else if (mod && e.key.toLowerCase() === "d") {
@@ -352,6 +401,9 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
     return () => window.removeEventListener("keydown", onKey);
   });
 
+  /** After a box selection, the click that ends a Ctrl+click drag must not clear it. */
+  const swallowClick = useRef(false);
+
   /** Opens the right-click menu at a screen point, kept inside the canvas near its edges. */
   const openMenu = (clientX: number, clientY: number, onNode: boolean, selected: number) => {
     const r = wrapper.current!.getBoundingClientRect();
@@ -364,23 +416,28 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
   };
 
   /** Right button on the background: drag = selection box, click = menu. */
-  const onRightDown = (e: React.MouseEvent) => {
-    if (e.button !== 2) return;
-    if (!(e.target as HTMLElement).classList.contains("react-flow__pane")) return;
+  const onRightDown = (e: React.PointerEvent) => {
+    // Right button, or Ctrl+click (how a Mac often right-clicks).
+    const right = e.button === 2 || (e.button === 0 && e.ctrlKey && !e.metaKey);
+    if (!right) return;
+    const t = e.target as HTMLElement;
+    // Anywhere on the background (edges included), never on a node, a port or a panel.
+    if (!t.closest(".react-flow") || t.closest(".react-flow__node, .react-flow__handle, .island, button, input, textarea, select")) return;
     e.preventDefault();
+    e.stopPropagation();
     const r = wrapper.current!.getBoundingClientRect();
     const start = { x: e.clientX - r.left, y: e.clientY - r.top };
     const additive = e.shiftKey;
     let moved = false;
     setMenu(null);
-    const move = (ev: MouseEvent) => {
+    const move = (ev: PointerEvent) => {
       const cur = { x: ev.clientX - r.left, y: ev.clientY - r.top };
       if (Math.abs(cur.x - start.x) + Math.abs(cur.y - start.y) > 4) moved = true;
       if (moved) setBox({ x0: start.x, y0: start.y, x1: cur.x, y1: cur.y });
     };
-    const up = (ev: MouseEvent) => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
       setBox(null);
       if (!moved) {
         openMenu(ev.clientX, ev.clientY, false, latest.current.nodes.filter((n) => n.selected).length);
@@ -399,9 +456,11 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
           .map((n) => n.id),
       );
       setNodes((ns) => ns.map((n) => ({ ...n, selected: inside.has(n.id) || (additive && !!n.selected) })));
+      swallowClick.current = true;
+      setTimeout(() => (swallowClick.current = false), 300);
     };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
   };
 
   const selectedCount = nodes.filter((n) => n.selected).length;
@@ -454,7 +513,13 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
         onDoubleClick={(e) => {
           if ((e.target as HTMLElement).classList.contains("react-flow__pane")) openPalette(e.clientX, e.clientY);
         }}
-        onMouseDownCapture={onRightDown}
+        onPointerDownCapture={onRightDown}
+        onClickCapture={(e) => {
+          if (!swallowClick.current) return;
+          swallowClick.current = false;
+          e.stopPropagation();
+          e.preventDefault();
+        }}
         onContextMenu={(e) => e.preventDefault()}
         onDragOver={(e) => {
           if (e.dataTransfer.types.includes(NODE_MIME)) {
@@ -519,7 +584,7 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
             </Pill>
           </Island>
           <p className="mt-2.5 ml-auto text-right text-[10px] text-muted-foreground">
-            Clic droit + glisser : sélectionner · clic droit : menu · ⌘A tout · ⌘D dupliquer · Suppr : effacer
+            Clic droit + glisser : sélectionner · clic droit : menu · ⌘Z annuler · ⌘⇧Z rétablir · ⌘A tout · ⌘D dupliquer · Suppr : effacer
           </p>
         </div>
 

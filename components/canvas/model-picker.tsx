@@ -15,11 +15,12 @@ const KIND_LABEL: Record<ModelKind, string> = {
   t2v: "texte → vidéo",
   i2v: "image → vidéo",
   v2v: "vidéo → vidéo",
+  r2v: "références → vidéo",
   llm: "LLM",
 };
 
-type Filter = "refs" | "negative" | "startEnd";
-const FILTER_LABEL: Record<Filter, string> = { refs: "réf", negative: "négatif", startEnd: "début + fin" };
+type Filter = "refs" | "videoRefs" | "negative" | "startEnd";
+const FILTER_LABEL: Record<Filter, string> = { refs: "réf", videoRefs: "vidéo réf", negative: "négatif", startEnd: "début + fin" };
 
 function price(usd: number | null | undefined, unit: string | null | undefined) {
   if (usd === null || usd === undefined) return "prix ?";
@@ -30,7 +31,12 @@ function price(usd: number | null | undefined, unit: string | null | undefined) 
 /** What a model accepts, read from its schema. */
 function Badges({ caps }: { caps?: ModelCaps | null }) {
   if (!caps) return null;
-  const list = [caps.refs ? `réf ×${caps.refs}` : null, caps.negative ? "négatif" : null, caps.startEnd ? "début + fin" : null].filter(
+  const list = [
+    caps.refs ? `réf ×${caps.refs}` : null,
+    caps.videoRefs ? `vidéo réf ×${caps.videoRefs}` : null,
+    caps.negative ? "négatif" : null,
+    caps.startEnd ? "début + fin" : null,
+  ].filter(
     (b): b is string => !!b,
   );
   if (!list.length) return null;
@@ -72,7 +78,7 @@ export function ModelPicker({ kinds, value, onChange }: { kinds: ModelKind[]; va
             id: m.id,
             label: m.label,
             price: m.mock ? "gratuit (mock)" : price(m.pricing.usd, m.pricing.unit),
-            caps: { refs: m.maxReferenceImages, negative: m.supportsNegativePrompt, startEnd: m.supportsStartEndFrames },
+            caps: { refs: m.maxReferenceImages, videoRefs: m.maxReferenceVideos, negative: m.supportsNegativePrompt, startEnd: m.supportsStartEndFrames },
           }));
   const current = enabled.find((m) => m.id === value) ?? enabled[0];
   const pass = (caps?: ModelCaps | null) => filters.every((f) => !!caps?.[f]);

@@ -23,8 +23,8 @@ const node = (id: string, type: CanvasGraph["nodes"][number]["type"], data = {})
 
 describe("node types", () => {
   it("lists every node type, generators last", () => {
-    expect(NODE_ORDER).toEqual(["text", "image", "video", "reference", "negative", "promptEnhancer", "textToImage", "textToVideo", "imageToVideo", "videoToVideo"]);
-    expect(NODE_ORDER.filter((t) => NODE_SPECS[t].model)).toEqual(["textToImage", "textToVideo", "imageToVideo", "videoToVideo"]);
+    expect(NODE_ORDER).toEqual(["text", "image", "video", "reference", "negative", "promptEnhancer", "textToImage", "textToVideo", "imageToVideo", "videoToVideo", "referenceToVideo"]);
+    expect(NODE_ORDER.filter((t) => NODE_SPECS[t].model)).toEqual(["textToImage", "textToVideo", "imageToVideo", "videoToVideo", "referenceToVideo"]);
   });
 
   it("links only ports of the same type", () => {
@@ -264,6 +264,37 @@ describe("project canvas (mock)", () => {
     // An image cannot be a video source (ports refuse it; the engine double-checks).
     const g: CanvasGraph = { nodes: [node("f", "image"), node("vv", "videoToVideo")], edges: [] };
     expect(isValidEdge(g, { source: "f", sourceHandle: "image", target: "vv", targetHandle: "source" })).toBe(false);
+  });
+
+  it("references → video: images and videos as references; Video → video can run on a reference model", async () => {
+    const { project } = await makeProject("R2V");
+    const { storeAsset } = await import("@/lib/media/store");
+    const { makeMockMp4, makeMockPng } = await import("@/lib/atlas/mock");
+    const clip = await storeAsset(await makeMockMp4("446622"), "video/mp4", "move.mp4");
+    const face = await storeAsset(makeMockPng("226644"), "image/png", "hero.png");
+    const { writeGraph, runNode } = await import("./run");
+    writeGraph(project.id, {
+      nodes: [
+        node("t", "text", { text: "La femme de image 1 danse comme dans video 1" }),
+        node("f", "image", { assetId: face.id }),
+        node("v", "video", { assetId: clip.id }),
+        node("r", "referenceToVideo"),
+        node("vv", "videoToVideo", { modelId: "mock/reference-to-video" }),
+      ],
+      edges: [
+        { id: "e1", source: "t", sourceHandle: "text", target: "r", targetHandle: "prompt" },
+        { id: "e2", source: "f", sourceHandle: "image", target: "r", targetHandle: "refs" },
+        { id: "e3", source: "v", sourceHandle: "video", target: "r", targetHandle: "videos" },
+        { id: "e4", source: "t", sourceHandle: "text", target: "vv", targetHandle: "prompt" },
+        { id: "e5", source: "v", sourceHandle: "video", target: "vv", targetHandle: "source" },
+      ],
+    });
+    const r = await runNode(project.id, { nodeId: "r" });
+    expect(r.estimate.modelId).toBe("mock/reference-to-video");
+    expect(r.runs[0].params.reference_images).toHaveLength(1);
+    expect(r.runs[0].params.reference_videos).toHaveLength(1);
+    const vv = await runNode(project.id, { nodeId: "vv" });
+    expect(vv.runs[0].params.reference_videos).toHaveLength(1); // the source video, as reference
   });
 
   it("a negative output cannot be wired into a prompt", () => {

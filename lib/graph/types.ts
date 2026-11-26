@@ -45,6 +45,7 @@ export const NODE_TYPES = [
   "textToVideo",
   "imageToVideo",
   "videoToVideo",
+  "referenceToVideo",
 ] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
 
@@ -54,9 +55,9 @@ export interface NodeSpec {
   inputs: PortSpec[];
   outputs: PortSpec[];
   /** Generators call a model of this kind and produce results. */
-  model?: "t2i" | "t2v" | "i2v" | "v2v";
+  model?: "t2i" | "t2v" | "i2v" | "v2v" | "r2v";
   /** Other model kinds the node may use (text → image with references uses an edit model). */
-  altModels?: ("i2i")[];
+  altModels?: ("i2i" | "r2v")[];
   /** Calls the LLM (text in, text out). */
   llm?: boolean;
 }
@@ -147,6 +148,20 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     ],
     outputs: [{ id: "video", type: "video" }],
     model: "v2v",
+    // Seedance 2.x and others take the source video as a reference video.
+    altModels: ["r2v"],
+  },
+  referenceToVideo: {
+    label: "Références → vidéo",
+    description: "Génère une vidéo à partir d'images et/ou de vidéos de référence (Seedance 2, Kling…)",
+    inputs: [
+      { id: "prompt", type: "text", label: "prompt", multiple: true },
+      { id: "refs", type: "image", label: "images de référence", multiple: true },
+      { id: "videos", type: "video", label: "vidéos de référence", multiple: true, optional: true },
+      { id: "negative", type: "negative", label: "négatif", optional: true },
+    ],
+    outputs: [{ id: "video", type: "video" }],
+    model: "r2v",
   },
 };
 

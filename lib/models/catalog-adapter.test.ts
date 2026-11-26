@@ -79,6 +79,25 @@ group("catalog adapter (real schemas)", () => {
     expect(gemini.mapInputs(gv)).toMatchObject({ video: "v", reference_images: ["r1"], seed: 7 });
   });
 
+  it("references → video: Seedance 2 takes images and videos; MiniMax one mixed list; old Seedance names", () => {
+    expect(classify({ model: "bytedance/seedance-2.0/reference-to-video", type: "Video" })).toBe("r2v");
+    expect(classify({ model: "bytedance/seedance-v1-pro-t2v-480p", type: "Video" })).toBe("t2v");
+    expect(classify({ model: "bytedance/seedance-v1-pro-i2v-720p", type: "Video" })).toBe("i2v");
+    const g = { prompt: "la femme de image 1 marche", referenceImageUrls: ["i1", "i2"], referenceVideoUrls: ["v1"], durationSec: 6, seed: 3 };
+    const seedance = entryFromDescriptor(build("bytedance/seedance-2.0/reference-to-video"));
+    expect(seedance.kind).toBe("r2v");
+    expect([seedance.maxReferenceImages, seedance.maxReferenceVideos]).toEqual([9, 3]);
+    expect(seedance.mapInputs(g)).toMatchObject({ reference_images: ["i1", "i2"], reference_videos: ["v1"], duration: 6, seed: 3, ratio: "16:9", generate_audio: false });
+    // Used by the Video → video node: the source video becomes the first reference video.
+    expect(seedance.mapInputs({ prompt: "en hiver", sourceVideoUrl: "src" })).toMatchObject({ reference_videos: ["src"] });
+    const flash = entryFromDescriptor(build("bytedance/seedance-2.5-flash/reference-to-video"));
+    expect(flash.maxReferenceVideos).toBe(5);
+    const minimax = entryFromDescriptor(build("minimax/h3/reference-to-video"));
+    expect(minimax.mapInputs(g)).toMatchObject({ refers: ["i1", "i2", "v1"] });
+    const kling = entryFromDescriptor(build("kwaivgi/kling-v4.0-flash/reference-to-video"));
+    expect(kling.mapInputs(g)).toMatchObject({ reference_images: ["i1", "i2"], reference_videos: ["v1"] });
+  });
+
   it("LLM prices per million tokens", () => {
     const d = describeLlm(CatalogModelSchema.parse({ model: "deepseek-ai/deepseek-v4-flash", type: "Text", price: { actual: { input_price: "0.14", output_price: "0.28" } } }));
     expect(d).toMatchObject({ inputUsdPerM: 0.14, outputUsdPerM: 0.28 });
