@@ -62,6 +62,23 @@ group("catalog adapter (real schemas)", () => {
     expect(ltx.durations).toBeUndefined();
   });
 
+  it("video → video: source video field by name, optional references, negative, duration", () => {
+    expect(classify({ model: "alibaba/wan-2.6/video-to-video", type: "Video" })).toBe("v2v");
+    expect(classify({ model: "kwaivgi/kling-v4.0-flash/video-edit", type: "Video" })).toBe("v2v");
+    expect(classify({ model: "sonilo/v1.1/video-to-video-music", type: "Video" })).toBeNull();
+    const gv = { prompt: "en hiver", sourceVideoUrl: "v", referenceImageUrls: ["r1"], negativePrompt: "flou", durationSec: 5, seed: 7 };
+    const wan = entryFromDescriptor(build("alibaba/wan-2.6/video-to-video"));
+    expect(wan.kind).toBe("v2v");
+    expect(wan.mapInputs(gv)).toMatchObject({ videos: ["v"], negative_prompt: "flou", duration: 5, seed: 7, size: "1280*720" });
+    const flux = entryFromDescriptor(build("black-forest-labs/flux-3/edit-video"));
+    expect(flux.mapInputs(gv)).toEqual({ prompt: "en hiver", video_url: "v" });
+    const kling = entryFromDescriptor(build("kwaivgi/kling-v4.0-flash/video-edit"));
+    expect(kling.maxReferenceImages).toBe(10);
+    expect(kling.mapInputs(gv)).toMatchObject({ video: "v", reference_images: ["r1"], duration: 5 });
+    const gemini = entryFromDescriptor(build("google/gemini-omni-1.2-flash/video-edit"));
+    expect(gemini.mapInputs(gv)).toMatchObject({ video: "v", reference_images: ["r1"], seed: 7 });
+  });
+
   it("LLM prices per million tokens", () => {
     const d = describeLlm(CatalogModelSchema.parse({ model: "deepseek-ai/deepseek-v4-flash", type: "Text", price: { actual: { input_price: "0.14", output_price: "0.28" } } }));
     expect(d).toMatchObject({ inputUsdPerM: 0.14, outputUsdPerM: 0.28 });

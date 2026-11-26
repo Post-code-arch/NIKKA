@@ -152,7 +152,9 @@ export function nodeModel(node: GraphNode, graph?: CanvasGraph): ModelEntry {
   if (model && kinds.includes(model.kind)) return model;
   // No (valid) choice: an edit model when references are wired, else the node's main kind.
   const wantsRefs = !!graph && incoming(graph, node.id, "refs").length > 0;
-  const chosen = (wantsRefs ? availableModels("i2i")[0] : undefined) ?? availableModels(NODE_SPECS[node.type].model)[0];
+  const chosen =
+    (wantsRefs ? availableModels().find((m) => kinds.includes(m.kind) && m.maxReferenceImages) : undefined) ??
+    availableModels(NODE_SPECS[node.type].model)[0];
   if (!chosen) throw new GenerationError("Aucun modèle disponible pour ce node", 400);
   return chosen;
 }
@@ -212,9 +214,18 @@ export async function runNode(projectId: string, opts: RunOptions): Promise<{ es
   if (refIds.length && !model.maxReferenceImages) {
     throw new GenerationError(`${model.label} n'accepte pas d'images de référence : choisis un modèle marqué « réf »`, 400);
   }
-  if (model.kind === "i2i") {
-    if (!refIds.length) throw new GenerationError(`${model.label} part d'images : branche une Image ou une Référence (avec des vues) sur « références »`, 400);
-    generic.referenceImageUrls = await Promise.all(refIds.slice(0, model.maxReferenceImages).map(uploadAsset));
+  if (model.kind === "i2i" && !refIds.length) {
+    throw new GenerationError(`${model.label} part d'images : branche une Image ou une Référence (avec des vues) sur « références »`, 400);
+  }
+  if (refIds.length) generic.referenceImageUrls = await Promise.all(refIds.slice(0, model.maxReferenceImages).map(uploadAsset));
+
+  // Video → video: the source video (an imported video or a generated one).
+  if (node.type === "videoToVideo") {
+    const sourceId = wired("video").flatMap((n) => assetsOf(n, runs))[0];
+    if (!sourceId) throw new GenerationError("Il faut une vidéo source : branche un node Vidéo ou une vidéo générée", 400);
+    const src = getDb().select().from(schema.assets).where(eq(schema.assets.id, sourceId)).get();
+    if (src?.kind !== "video") throw new GenerationError("L'entrée « vidéo source » doit recevoir une vidéo", 400);
+    generic.sourceVideoUrl = await uploadAsset(sourceId);
   }
 
   // Negative prompt: only models whose schema has one.

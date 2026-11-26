@@ -367,7 +367,7 @@ function GeneratorNode({ data, id, type, selected }: Props) {
   // Same default as the server: an edit model when references are wired.
   const model =
     choices.find((m) => m.id === data.modelId) ??
-    (hasRefs ? choices.find((m) => m.kind === "i2i") : undefined) ??
+    (hasRefs ? choices.find((m) => !!m.maxReferenceImages) : undefined) ??
     choices.find((m) => m.kind === kind);
   const issues = [
     hasRefs && model && !model.maxReferenceImages && "ce modèle n'accepte pas d'images de référence",
@@ -505,6 +505,7 @@ function GeneratorNode({ data, id, type, selected }: Props) {
 export const TextToImageNode = (p: Props) => <GeneratorNode {...p} type="textToImage" />;
 export const TextToVideoNode = (p: Props) => <GeneratorNode {...p} type="textToVideo" />;
 export const ImageToVideoNode = (p: Props) => <GeneratorNode {...p} type="imageToVideo" />;
+export const VideoToVideoNode = (p: Props) => <GeneratorNode {...p} type="videoToVideo" />;
 
 export const graphNodeTypes = {
   text: TextNode,
@@ -516,6 +517,7 @@ export const graphNodeTypes = {
   textToImage: TextToImageNode,
   textToVideo: TextToVideoNode,
   imageToVideo: ImageToVideoNode,
+  videoToVideo: VideoToVideoNode,
 };
 
 // --- Palette ---------------------------------------------------------------------------
@@ -530,6 +532,7 @@ const GROUP: Record<NodeType, string> = {
   textToImage: "Génération",
   textToVideo: "Génération",
   imageToVideo: "Génération",
+  videoToVideo: "Génération",
 };
 
 export function NodePalette({

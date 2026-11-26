@@ -192,10 +192,12 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
     const current = models.find((m) => m.id === target.data.modelId);
     const ok = handle === "refs" ? !!current?.maxReferenceImages : handle === "end" ? !!current?.supportsStartEndFrames : true;
     if (ok) return;
+    const spec = NODE_SPECS[target.type];
+    const kinds: string[] = spec.model ? [spec.model, ...(spec.altModels ?? [])] : [];
     const better =
       handle === "refs"
-        ? models.find((m) => m.kind === "i2i")
-        : models.find((m) => m.kind === "i2v" && m.supportsStartEndFrames);
+        ? models.find((m) => kinds.includes(m.kind) && m.maxReferenceImages)
+        : models.find((m) => kinds.includes(m.kind) && m.supportsStartEndFrames);
     if (better) setNodes((ns) => ns.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, modelId: better.id } } : n)));
   };
 

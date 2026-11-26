@@ -14,6 +14,7 @@ const KIND_LABEL: Record<ModelKind, string> = {
   i2i: "édition (références)",
   t2v: "texte → vidéo",
   i2v: "image → vidéo",
+  v2v: "vidéo → vidéo",
   llm: "LLM",
 };
 

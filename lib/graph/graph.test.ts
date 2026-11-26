@@ -22,9 +22,9 @@ afterAll(async () => {
 const node = (id: string, type: CanvasGraph["nodes"][number]["type"], data = {}) => ({ id, type, position: { x: 0, y: 0 }, data });
 
 describe("node types", () => {
-  it("has the six base nodes plus the prompt enhancer", () => {
-    expect(NODE_ORDER).toEqual(["text", "image", "video", "reference", "negative", "promptEnhancer", "textToImage", "textToVideo", "imageToVideo"]);
-    expect(NODE_ORDER.filter((t) => NODE_SPECS[t].model)).toEqual(["textToImage", "textToVideo", "imageToVideo"]);
+  it("lists every node type, generators last", () => {
+    expect(NODE_ORDER).toEqual(["text", "image", "video", "reference", "negative", "promptEnhancer", "textToImage", "textToVideo", "imageToVideo", "videoToVideo"]);
+    expect(NODE_ORDER.filter((t) => NODE_SPECS[t].model)).toEqual(["textToImage", "textToVideo", "imageToVideo", "videoToVideo"]);
   });
 
   it("links only ports of the same type", () => {
@@ -231,6 +231,39 @@ describe("project canvas (mock)", () => {
     const r = await runNode(project.id, { nodeId: "v" });
     expect(r.runs[0].params).toMatchObject({ negative_prompt: "flou" });
     expect(String(r.runs[0].params.end_image)).toMatch(/^mock:\/\/upload\//);
+  });
+
+  it("video → video: imported video as source, references and negative sent; refuses an image as source", async () => {
+    const { project } = await makeProject("V2V");
+    const { storeAsset } = await import("@/lib/media/store");
+    const { makeMockMp4, makeMockPng } = await import("@/lib/atlas/mock");
+    const clip = await storeAsset(await makeMockMp4("224466"), "video/mp4", "clip.mp4");
+    const face = await storeAsset(makeMockPng("664422"), "image/png", "face.png");
+    const { writeGraph, runNode } = await import("./run");
+    writeGraph(project.id, {
+      nodes: [
+        node("v", "video", { assetId: clip.id }),
+        node("t", "text", { text: "La même scène, en hiver sous la neige" }),
+        node("f", "image", { assetId: face.id }),
+        node("n", "negative", { text: "flou" }),
+        node("vv", "videoToVideo"),
+      ],
+      edges: [
+        { id: "e1", source: "v", sourceHandle: "video", target: "vv", targetHandle: "video" },
+        { id: "e2", source: "t", sourceHandle: "text", target: "vv", targetHandle: "prompt" },
+        { id: "e3", source: "f", sourceHandle: "image", target: "vv", targetHandle: "refs" },
+        { id: "e4", source: "n", sourceHandle: "negative", target: "vv", targetHandle: "negative" },
+      ],
+    });
+    const r = await runNode(project.id, { nodeId: "vv" });
+    expect(r.estimate.modelId).toBe("mock/video-to-video");
+    expect(r.runs[0].kind).toBe("video");
+    expect(String(r.runs[0].params.video)).toMatch(/^mock:\/\/upload\//);
+    expect(r.runs[0].params.reference_images).toHaveLength(1);
+    expect(r.runs[0].params.negative_prompt).toBe("flou");
+    // An image cannot be a video source (ports refuse it; the engine double-checks).
+    const g: CanvasGraph = { nodes: [node("f", "image"), node("vv", "videoToVideo")], edges: [] };
+    expect(isValidEdge(g, { source: "f", sourceHandle: "image", target: "vv", targetHandle: "video" })).toBe(false);
   });
 
   it("a negative output cannot be wired into a prompt", () => {

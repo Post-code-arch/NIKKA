@@ -26,6 +26,8 @@ export interface ModelDescriptor {
     seed?: string;
     /** Several reference images (array) or a single one (string). */
     images?: { name: string; array: boolean; max: number };
+    /** Source video of a video → video model (string, or array of one). */
+    video?: { name: string; array: boolean };
     startImage?: string;
     endImage?: string;
     duration?: { name: string; values: number[] };
@@ -43,6 +45,7 @@ export interface LlmDescriptor {
 }
 
 const REF_ARRAY_FIELDS = ["images", "image_urls", "reference_images", "input_images", "reference_image_urls"] as const;
+const VIDEO_FIELDS = ["video", "video_url", "input_video", "source_video", "videos", "video_urls"] as const;
 const END_IMAGE_FIELDS = ["last_image", "end_image", "end_image_url", "last_frame_image", "tail_image", "last_frame"] as const;
 
 function typeOf(p: SchemaProperty): string | undefined {
@@ -59,6 +62,9 @@ export function classify(m: Pick<CatalogModel, "model" | "type">): ModelKind | n
     return null;
   }
   if (m.type === "Video") {
+    // Video in, video out (restyle / edit). Sound-only, extend, upscale and reframe are other tools.
+    if (/music|sound|sfx|audio/.test(id)) return null;
+    if (/video-to-video|video-edit|edit-video|\/v2v\b|restyle/.test(id)) return "v2v";
     if (/image-to-video|\/i2v\b|start-end|first-last/.test(id)) return "i2v";
     if (/text-to-video|\/t2v\b/.test(id)) return "t2v";
     return null;
@@ -119,12 +125,23 @@ export function describe(m: CatalogModel, schema: ModelInputSchema, price: { usd
       fields.images = { name: claim(single)!, array: false, max: 1 };
     }
   }
+  if (kind === "v2v") {
+    const v = findField(schema, VIDEO_FIELDS);
+    if (!v) throw new Error(`${m.model} : aucun champ de vidéo source dans le schéma`);
+    fields.video = { name: claim(v)!, array: typeOf(props[v]) === "array" };
+    // Optional reference images (characters, style).
+    const refs = findField(schema, REF_ARRAY_FIELDS);
+    if (refs) {
+      const p = props[refs] as SchemaProperty & { maxItems?: number };
+      fields.images = { name: claim(refs)!, array: true, max: Math.min(16, p.maxItems ?? 4) };
+    }
+  }
   if (kind === "i2v") {
     fields.startImage = claim(findField(schema, START_IMAGE_FIELDS));
     if (!fields.startImage) throw new Error(`${m.model} : aucun champ d'image de départ dans le schéma`);
     fields.endImage = claim(findField(schema, END_IMAGE_FIELDS));
   }
-  if (kind === "i2v" || kind === "t2v") {
+  if (kind === "i2v" || kind === "t2v" || kind === "v2v") {
     const d = props.duration;
     if (d) {
       let values = numericEnum(d);
@@ -154,7 +171,7 @@ export function describe(m: CatalogModel, schema: ModelInputSchema, price: { usd
   if (unfilled.length) throw new Error(`${m.model} : champs requis non pris en charge (${unfilled.join(", ")})`);
   if (!fields.prompt && kind !== "i2v") throw new Error(`${m.model} : pas de champ prompt`);
 
-  const video = kind === "i2v" || kind === "t2v";
+  const video = kind === "i2v" || kind === "t2v" || kind === "v2v";
   const unit = price?.unit === "image" || price?.unit === "second" ? price.unit : video ? "second" : "image";
   const usd = price?.usd ?? 0;
   return {
@@ -197,6 +214,7 @@ export function entryFromDescriptor(d: ModelDescriptor): ModelEntry {
         body[f.images.name] = f.images.array ? g.referenceImageUrls.slice(0, f.images.max) : g.referenceImageUrls[0];
       }
       if (f.startImage && g.startImageUrl) body[f.startImage] = g.startImageUrl;
+      if (f.video && g.sourceVideoUrl) body[f.video.name] = f.video.array ? [g.sourceVideoUrl] : g.sourceVideoUrl;
       if (f.endImage && g.endImageUrl) body[f.endImage] = g.endImageUrl;
       if (f.duration && g.durationSec) body[f.duration.name] = closest(f.duration.values, g.durationSec);
       return body;

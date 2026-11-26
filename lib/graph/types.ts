@@ -34,7 +34,18 @@ export interface PortSpec {
   optional?: boolean;
 }
 
-export const NODE_TYPES = ["text", "image", "video", "reference", "negative", "promptEnhancer", "textToImage", "textToVideo", "imageToVideo"] as const;
+export const NODE_TYPES = [
+  "text",
+  "image",
+  "video",
+  "reference",
+  "negative",
+  "promptEnhancer",
+  "textToImage",
+  "textToVideo",
+  "imageToVideo",
+  "videoToVideo",
+] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
 
 export interface NodeSpec {
@@ -43,7 +54,7 @@ export interface NodeSpec {
   inputs: PortSpec[];
   outputs: PortSpec[];
   /** Generators call a model of this kind and produce results. */
-  model?: "t2i" | "t2v" | "i2v";
+  model?: "t2i" | "t2v" | "i2v" | "v2v";
   /** Other model kinds the node may use (text → image with references uses an edit model). */
   altModels?: ("i2i")[];
   /** Calls the LLM (text in, text out). */
@@ -124,6 +135,18 @@ export const NODE_SPECS: Record<NodeType, NodeSpec> = {
     ],
     outputs: [{ id: "video", type: "video" }],
     model: "i2v",
+  },
+  videoToVideo: {
+    label: "Vidéo → vidéo",
+    description: "Transforme une vidéo (style, décor, éléments) en gardant son mouvement",
+    inputs: [
+      { id: "video", type: "video", label: "vidéo source" },
+      { id: "prompt", type: "text", label: "prompt", multiple: true },
+      { id: "refs", type: "image", label: "références", multiple: true, optional: true },
+      { id: "negative", type: "negative", label: "négatif", optional: true },
+    ],
+    outputs: [{ id: "video", type: "video" }],
+    model: "v2v",
   },
 };
 

@@ -952,5 +952,419 @@
     "prompt"
    ]
   }
+ },
+ "google/gemini-omni-1.2-flash/video-edit": {
+  "catalog": {
+   "model": "google/gemini-omni-1.2-flash/video-edit",
+   "type": "Video",
+   "displayName": "Gemini Omni 1.2 Flash Video Edit",
+   "price": {
+    "discount": "80",
+    "actual": {
+     "base_price": "0.023",
+     "unit": "second"
+    },
+    "origin": {
+     "base_price": "0.028",
+     "unit": "second"
+    }
+   }
+  },
+  "input": {
+   "properties": {
+    "model": {
+     "type": "string",
+     "default": "google/gemini-omni-1.2-flash/video-edit"
+    },
+    "prompt": {
+     "type": "string"
+    },
+    "video": {
+     "type": "string"
+    },
+    "reference_images": {
+     "items": {
+      "type": "string",
+      "format": "uri"
+     },
+     "maxItems": 10,
+     "minItems": 1,
+     "type": "array"
+    },
+    "thinking_level": {
+     "default": "default",
+     "enum": [
+      "default",
+      "high",
+      "low"
+     ],
+     "type": "string"
+    },
+    "seed": {
+     "default": -1,
+     "type": "integer"
+    }
+   },
+   "required": [
+    "model",
+    "prompt",
+    "video"
+   ]
+  }
+ },
+ "black-forest-labs/flux-3/edit-video": {
+  "catalog": {
+   "model": "black-forest-labs/flux-3/edit-video",
+   "type": "Video",
+   "displayName": "BLACKFORESTLABS FLUX 3 Edit Video",
+   "price": {
+    "discount": "100",
+    "actual": {
+     "base_price": "0.03"
+    },
+    "origin": {
+     "base_price": "0.03"
+    }
+   }
+  },
+  "input": {
+   "properties": {
+    "model": {
+     "type": "string",
+     "default": "black-forest-labs/flux-3/edit-video",
+     "enum": [
+      "black-forest-labs/flux-3/edit-video"
+     ]
+    },
+    "prompt": {
+     "type": "string"
+    },
+    "video_url": {
+     "type": "string"
+    },
+    "safety_tolerance": {
+     "type": "integer",
+     "default": 2,
+     "minimum": 0,
+     "maximum": 4
+    }
+   },
+   "required": [
+    "model",
+    "prompt",
+    "video_url"
+   ]
+  }
+ },
+ "kwaivgi/kling-v4.0-flash/video-edit": {
+  "catalog": {
+   "model": "kwaivgi/kling-v4.0-flash/video-edit",
+   "type": "Video",
+   "displayName": "Kling Video 4.0 Flash Video-Edit",
+   "price": {
+    "discount": "70",
+    "actual": {
+     "base_price": "0.066",
+     "unit": "second"
+    },
+    "origin": {
+     "base_price": "0.094",
+     "unit": "second"
+    }
+   }
+  },
+  "input": {
+   "properties": {
+    "model": {
+     "type": "string",
+     "default": "kwaivgi/kling-v4.0-flash/video-edit",
+     "enum": [
+      "kwaivgi/kling-v4.0-flash/video-edit"
+     ]
+    },
+    "prompt": {
+     "type": "string",
+     "default": "Turn the scene into a snowy winter evening while keeping the subject and camera motion of @video_1 unchanged."
+    },
+    "video": {
+     "type": "string"
+    },
+    "reference_images": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "maxItems": 10
+    },
+    "reference_videos": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "maxItems": 4
+    },
+    "elements": {
+     "type": "array",
+     "maxItems": 7,
+     "items": {
+      "type": "object",
+      "properties": {
+       "element_id": {
+        "type": "integer",
+        "description": "ID of an existing subject from the Kling element library (64-bit integer). Mutually exclusive with element_name."
+       },
+       "element_name": {
+        "type": "string",
+        "description": "Name of a new subject to create inline (max 20 characters). Mutually exclusive with element_id."
+       },
+       "element_description": {
+        "type": "string",
+        "description": "Optional description of the new subject (max 100 characters)."
+       },
+       "reference_type": {
+        "type": "string",
+        "enum": [
+         "image_refer",
+         "video_refer"
+        ],
+        "description": "How the new subject is defined: image_refer (multi-image subject) or video_refer (video character subject, realistic humans only)."
+       },
+       "frontal_image": {
+        "type": "string",
+        "description": "Frontal image URL of the new subject (required when reference_type=image_refer)."
+       },
+       "refer_images": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 3,
+        "description": "1-3 additional reference image URLs of the new subject (image_refer)."
+       },
+       "refer_videos": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 1,
+        "description": "Reference video URL of the new subject (video_refer, 3-8s). Billed as input video."
+       },
+       "element_voice_id": {
+        "type": "string",
+        "description": "Optional: binds an existing voice (custom or preset voice_id) to this inline-created subject. Empty means no voice is bound. Only supported for character/humanoid image subjects (reference_type=image_refer)."
+       }
+      },
+      "allOf": [
+       {
+        "if": {
+         "properties": {
+          "element_id": {
+           "type": "integer",
+           "minimum": 1
+          }
+         },
+         "required": [
+          "element_id"
+         ]
+        },
+        "then": {
+         "properties": {
+          "element_name": {
+           "x-hidden": true
+          },
+          "element_description": {
+           "x-hidden": true
+          },
+          "reference_type": {
+           "x-hidden": true
+          },
+          "frontal_image": {
+           "x-hidden": true
+          },
+          "refer_images": {
+           "x-hidden": true
+          },
+          "refer_videos": {
+           "x-hidden": true
+          },
+          "element_voice_id": {
+           "x-hidden": true
+          }
+         }
+        },
+        "else": {
+         "required": [
+          "element_name",
+          "reference_type"
+         ]
+        }
+       },
+       {
+        "if": {
+         "properties": {
+          "reference_type": {
+           "const": "video_refer"
+          }
+         },
+         "required": [
+          "reference_type"
+         ]
+        },
+        "then": {
+         "required": [
+          "refer_videos"
+         ],
+         "properties": {
+          "frontal_image": {
+           "x-hidden": true
+          },
+          "refer_images": {
+           "x-hidden": true
+          },
+          "refer_videos": {
+           "minItems": 1
+          },
+          "element_voice_id": {
+           "x-hidden": true
+          }
+         }
+        },
+        "else": {
+         "required": [
+          "frontal_image",
+          "refer_images"
+         ],
+         "properties": {
+          "refer_videos": {
+           "x-hidden": true
+          },
+          "refer_images": {
+           "minItems": 1
+          }
+         }
+        }
+       }
+      ]
+     }
+    },
+    "voice_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "maxItems": 3
+    },
+    "duration": {
+     "type": "integer",
+     "default": 5,
+     "minimum": 3,
+     "maximum": 20
+    },
+    "resolution": {
+     "type": "string",
+     "default": "720p",
+     "enum": [
+      "720p"
+     ]
+    },
+    "audio_mode": {
+     "type": "string",
+     "default": "native",
+     "enum": [
+      "native",
+      "original"
+     ]
+    }
+   },
+   "required": [
+    "model",
+    "prompt",
+    "video"
+   ]
+  }
+ },
+ "alibaba/wan-2.6/video-to-video": {
+  "catalog": {
+   "model": "alibaba/wan-2.6/video-to-video",
+   "type": "Video",
+   "displayName": "Wan-2.6 Video-to-video",
+   "price": {
+    "discount": "70",
+    "actual": {
+     "base_price": "0.07"
+    },
+    "origin": {
+     "base_price": "0.1"
+    }
+   }
+  },
+  "input": {
+   "properties": {
+    "model": {
+     "type": "string",
+     "default": "alibaba/wan-2.6/video-to-video"
+    },
+    "videos": {
+     "items": {
+      "type": "string"
+     },
+     "maxItems": 3,
+     "minItems": 1,
+     "type": "array"
+    },
+    "duration": {
+     "default": 5,
+     "enum": [
+      5,
+      10
+     ],
+     "type": "integer"
+    },
+    "enable_prompt_expansion": {
+     "default": true,
+     "type": "boolean"
+    },
+    "negative_prompt": {
+     "type": "string"
+    },
+    "prompt": {
+     "type": "string"
+    },
+    "seed": {
+     "default": -1,
+     "type": "integer"
+    },
+    "size": {
+     "default": "1280*720",
+     "enum": [
+      "1280*720",
+      "720*1280",
+      "960*960",
+      "1088*832",
+      "832*1088",
+      "1920*1080",
+      "1080*1920",
+      "1440*1440",
+      "1632*1248",
+      "1248*1632"
+     ],
+     "type": "string"
+    },
+    "shot_type": {
+     "default": "multi",
+     "enum": [
+      "multi",
+      "single"
+     ],
+     "type": "string"
+    }
+   },
+   "required": [
+    "model",
+    "prompt",
+    "size",
+    "videos"
+   ]
+  }
  }
 }

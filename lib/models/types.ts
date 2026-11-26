@@ -1,6 +1,6 @@
 import type { CameraCapabilities } from "@/lib/camera/phrasing";
 
-export type ModelKind = "t2i" | "i2i" | "t2v" | "i2v" | "llm";
+export type ModelKind = "t2i" | "i2i" | "t2v" | "i2v" | "v2v" | "llm";
 export type ModelTier = "sketch" | "draft" | "quality";
 
 /** NIKKA-side inputs, mapped to each model's own schema by `mapInputs`. */
@@ -11,6 +11,8 @@ export interface GenericInputs {
   /** Temporary Atlas URLs (uploaded just before submission). */
   referenceImageUrls?: string[];
   startImageUrl?: string;
+  /** Video to transform (video → video). */
+  sourceVideoUrl?: string;
   endImageUrl?: string;
   durationSec?: number;
   aspectRatio?: string;
