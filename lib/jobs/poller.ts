@@ -1,6 +1,6 @@
 import { and, eq, lte } from "drizzle-orm";
 import { getDb, schema } from "@/db";
-import { recordObservedPrice } from "@/lib/models/store";
+import { pricingUnit, recordObservedPrice } from "@/lib/models/store";
 import type { Job } from "@/db/schema";
 import {
   downloadToAssets,
@@ -147,14 +147,17 @@ async function pollJob(job: Job): Promise<void> {
   // Atlas reports the billed price of the prediction: the real cost, when given.
   const billed = Number(data.price);
   const actualUsd = Number.isFinite(billed) && billed >= 0 && !mock ? billed : undefined;
-  if (actualUsd !== undefined) learnPrice(job, actualUsd);
+  if (actualUsd !== undefined) learnPrice(job, actualUsd, assetIds[0]);
   if (job.takeId) completeTake(job, job.takeId, assetIds, attempts, actualUsd);
   else if (job.refGenerationId) completeRefGeneration(job, job.refGenerationId, assetIds, attempts, actualUsd);
   else if (job.nodeRunId) completeNodeRun(job, job.nodeRunId, assetIds, attempts, actualUsd);
 }
 
-/** The first real bill of a model corrects its unit price for every later estimate. */
-function learnPrice(job: Job, billedUsd: number) {
+/**
+ * A real bill gives the model's unit price: billed ÷ quantity (one image, or
+ * the seconds of the video produced). Later estimates use it.
+ */
+function learnPrice(job: Job, billedUsd: number, assetId: string | undefined) {
   const db = getDb();
   const row = job.takeId
     ? db.select().from(schema.takes).where(eq(schema.takes.id, job.takeId)).get()
@@ -163,7 +166,14 @@ function learnPrice(job: Job, billedUsd: number) {
       : job.refGenerationId
         ? db.select().from(schema.refGenerations).where(eq(schema.refGenerations.id, job.refGenerationId)).get()
         : undefined;
-  if (row) recordObservedPrice(row.model, row.costEstimatedUsd, billedUsd);
+  if (!row) return;
+  const unit = pricingUnit(row.model);
+  if (unit === "image" || unit === "request") return recordObservedPrice(row.model, billedUsd);
+  if (unit === "second") {
+    const asset = assetId ? db.select().from(schema.assets).where(eq(schema.assets.id, assetId)).get() : undefined;
+    const seconds = Math.round(asset?.durationSec ?? 0);
+    if (seconds > 0) recordObservedPrice(row.model, billedUsd / seconds);
+  }
 }
 
 function markJobDone(tx: Pick<ReturnType<typeof getDb>, "update">, job: Job, attempts: number) {

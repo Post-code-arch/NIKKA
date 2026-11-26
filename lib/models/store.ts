@@ -40,18 +40,19 @@ export function readStore(): Required<StoreFile> & { entries: ModelEntry[] } {
   return { ...cache.data, entries: cache.entries };
 }
 
-/**
- * Learns a model's real unit price from a bill: the estimate used the
- * current unit price, so real unit = unit × billed / estimated.
- */
-export function recordObservedPrice(modelId: string, estimatedUsd: number, billedUsd: number) {
-  if (!(estimatedUsd > 0) || !(billedUsd >= 0)) return;
+/** Learns a model's real unit price (USD per image, or per second of video) from a bill. */
+export function recordObservedPrice(modelId: string, unitUsd: number) {
+  if (!(unitUsd >= 0) || !Number.isFinite(unitUsd)) return;
   const store = readStore();
-  const entry = store.entries.find((e) => e.id === modelId);
-  if (!entry) return;
-  const usd = Math.round(((entry.pricing.usd * billedUsd) / estimatedUsd) * 100000) / 100000;
-  if (Math.abs(usd - entry.pricing.usd) < 1e-6) return;
+  if (!store.entries.some((e) => e.id === modelId)) return;
+  const usd = Math.round(unitUsd * 100000) / 100000;
+  if (store.observed[modelId]?.usd === usd) return;
   write({ media: store.media, llm: store.llm, observed: { ...store.observed, [modelId]: { usd, at: Date.now() } } });
+}
+
+/** The pricing unit of an enabled model. */
+export function pricingUnit(modelId: string) {
+  return readStore().entries.find((e) => e.id === modelId)?.pricing.unit;
 }
 
 function write(data: StoreFile) {
@@ -87,8 +88,9 @@ export function disableModel(id: string) {
 /** First run in live mode: the selection proposed to the user (schemas verified). */
 export const RECOMMENDED = [
   "deepseek-ai/deepseek-v4-flash",
-  "openai/gpt-image-1.5/text-to-image",
-  "black-forest-labs/flux-2-pro/edit",
+  // GPT Image 1.5 and FLUX.2 Pro Edit failed upstream at Atlas on 2026-11-26 (not billed).
+  "black-forest-labs/flux-3/text-to-image",
+  "bytedance/seedream-v5.0-lite/edit",
   "bytedance/seedance-v1-pro-fast/image-to-video",
   "kwaivgi/kling-v2.5-turbo-pro/image-to-video",
   "bytedance/seedance-v1-pro-fast/text-to-video",
