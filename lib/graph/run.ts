@@ -11,7 +11,7 @@ import { z } from "zod";
 import { DEFAULT_CONFIRM_THRESHOLD_USD, estimateCostUsd, round } from "@/lib/cost/estimate";
 import { GenerationError } from "@/lib/generation/service";
 import { ensurePoller, refreshShotStatus } from "@/lib/jobs/poller";
-import { availableModels, getModel } from "@/lib/models/registry";
+import { availableModels, getModel, resolveLlm } from "@/lib/models/registry";
 import type { GenericInputs, ModelEntry } from "@/lib/models/types";
 import { CanvasGraphSchema, NODE_SPECS, incoming, isValidEdge, sanitizeGraph, type CanvasGraph, type GraphNode } from "./types";
 
@@ -289,6 +289,7 @@ export async function enhanceNode(projectId: string, nodeId: string) {
     EnhanceSchema,
     { brief: source, context: { target, instruction } },
     { target, instruction: instruction || "none" },
+    { model: isMockMode() ? undefined : resolveLlm(node.data.modelId)?.id },
   );
   // Re-read: the canvas may have been edited while the LLM answered.
   const latest = sanitizeGraph(loadProject(projectId).canvas);

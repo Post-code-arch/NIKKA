@@ -1,9 +1,13 @@
+import type { LlmDescriptor } from "./catalog-adapter";
 import type { ModelEntry } from "./types";
 
 /**
  * Models served by the local mock backend (lib/atlas/mock.ts). Their
  * parameter names mirror the mock schemas there.
  */
+/** Mock LLM (rule-based digester and enhancer, nothing billed). */
+export const MOCK_LLMS: LlmDescriptor[] = [{ id: "mock/llm", label: "Mock · LLM", inputUsdPerM: 0, outputUsdPerM: 0 }];
+
 export const MOCK_MODELS: ModelEntry[] = [
   {
     id: "mock/text-to-image",

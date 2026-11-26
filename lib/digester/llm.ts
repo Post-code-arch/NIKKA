@@ -54,13 +54,14 @@ export async function callJson<T extends z.ZodType>(
   schema: T,
   input: { brief: string; context?: unknown },
   vars: Record<string, string | number> = {},
+  opts: { model?: string } = {},
 ): Promise<z.infer<T>> {
   if (!chatOverride && isMockMode()) {
     const parsed = schema.safeParse(mockTask(task, input, vars));
     if (!parsed.success) throw new DigestError(`Mock invalide (${task}) : ${zodMessage(parsed.error)}`, 500);
     return parsed.data;
   }
-  const send: ChatFn = chatOverride ?? (async (m) => (await chat(m, { json: true, temperature: task === "concepts" ? 0.9 : task === "enhance" ? 0.7 : 0.3 })).text);
+  const send: ChatFn = chatOverride ?? (async (m) => (await chat(m, { json: true, model: opts.model, temperature: task === "concepts" ? 0.9 : task === "enhance" ? 0.7 : 0.3 })).text);
   const user = [`BRIEF:\n${input.brief}`, input.context ? `CONTEXT (validated levels, JSON):\n${JSON.stringify(input.context, null, 2)}` : ""]
     .filter(Boolean)
     .join("\n\n");

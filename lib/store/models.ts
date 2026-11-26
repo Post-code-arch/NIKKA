@@ -1,19 +1,35 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { LlmDescriptor } from "@/lib/models/catalog-adapter";
 import type { ModelInfo } from "@/lib/models/registry";
 import { api } from "./api";
 
-let cache: Promise<{ mock: boolean; models: ModelInfo[] }> | null = null;
+export type ModelsData = { mock: boolean; models: ModelInfo[]; llms: LlmDescriptor[] };
 
-/** Registry entries usable right now (mock or real), fetched once per page. */
+let cache: Promise<ModelsData> | null = null;
+const listeners = new Set<(d: ModelsData) => void>();
+
+/** Registry entries usable right now (mock or enabled Atlas models), shared by the page. */
 export function useModels() {
-  const [data, setData] = useState<{ mock: boolean; models: ModelInfo[] } | null>(null);
+  const [data, setData] = useState<ModelsData | null>(null);
   useEffect(() => {
-    cache ??= api<{ mock: boolean; models: ModelInfo[] }>("/api/models");
+    cache ??= api<ModelsData>("/api/models");
     void cache.then(setData);
+    listeners.add(setData);
+    return () => {
+      listeners.delete(setData);
+    };
   }, []);
   return data;
+}
+
+/** After enabling a model from the catalog: every node sees it. */
+export async function reloadModels() {
+  cache = api<ModelsData>("/api/models");
+  const d = await cache;
+  listeners.forEach((l) => l(d));
+  return d;
 }
 
 /** The project's default keyframe / video models, else the first available. */

@@ -14,6 +14,7 @@ import type { ModelInfo } from "@/lib/models/registry";
 import type { ProjectTree } from "@/lib/projects/queries";
 import { assetUrl } from "@/lib/store/api";
 import { cn } from "@/lib/utils";
+import { ModelPicker } from "./model-picker";
 
 /** What every node of the project canvas can read and do. */
 export interface GraphContextValue {
@@ -181,6 +182,9 @@ export function PromptEnhancerNode({ data, id, selected }: Props) {
     >
       <NodePanel className="space-y-2">
         <Ports type="promptEnhancer" />
+        <NodeField label="LLM">
+          <ModelPicker kind="llm" value={data.modelId} onChange={(modelId) => updateData(id, { modelId })} />
+        </NodeField>
         <NodeField label="Pour">
           <select
             value={data.target ?? "image"}
@@ -314,18 +318,7 @@ function GeneratorNode({ data, id, type, selected }: Props) {
       <NodePanel>
         <Ports type={type} />
         <NodeField label="Modèle">
-          <select
-            value={model?.id ?? ""}
-            onChange={(e) => updateData(id, { modelId: e.target.value })}
-            className="nodrag h-7 max-w-36 rounded-md bg-surface px-1.5 text-[11px] outline-none"
-          >
-            {choices.length === 0 && <option value="">Aucun modèle</option>}
-            {choices.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
+          <ModelPicker kind={kind} value={model?.id} onChange={(modelId) => updateData(id, { modelId })} />
         </NodeField>
         {video && durations.length > 0 && (
           <NodeField label="Durée">

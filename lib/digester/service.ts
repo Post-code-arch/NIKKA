@@ -1,6 +1,7 @@
 import { and, eq, inArray, max } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { isMockMode } from "@/lib/atlas/config";
+import { resolveLlm } from "@/lib/models/registry";
 import type { Origin } from "@/lib/domain/field";
 import { DigestError, callJson } from "./llm";
 import {
@@ -58,10 +59,12 @@ export interface DigestView {
 }
 
 /** Rough estimate shown before any LLM call (PRD rule: no paid call without a visible cost). */
-export function estimateLlmUsd(briefChars: number): number {
+export function estimateLlmUsd(briefChars: number, modelId?: string): number {
   if (isMockMode()) return 0;
-  const inPrice = Number(process.env.NIKKA_LLM_USD_PER_MTOK_IN ?? 1);
-  const outPrice = Number(process.env.NIKKA_LLM_USD_PER_MTOK_OUT ?? 4);
+  // Catalog price of the chosen LLM; env values (or a cautious default) otherwise.
+  const llm = resolveLlm(modelId);
+  const inPrice = llm?.inputUsdPerM || Number(process.env.NIKKA_LLM_USD_PER_MTOK_IN ?? 1);
+  const outPrice = llm?.outputUsdPerM || Number(process.env.NIKKA_LLM_USD_PER_MTOK_OUT ?? 4);
   const tokensIn = (briefChars + 4000) / 4;
   return Math.round(((tokensIn * inPrice + 3000 * outPrice) / 1e6) * 10000) / 10000;
 }
@@ -72,7 +75,7 @@ export function getDigest(projectId: string): DigestView {
     briefRaw: project.briefRaw,
     maturity: project.maturity,
     state: readState(project),
-    llm: { mock: isMockMode(), model: isMockMode() ? null : (process.env.NIKKA_LLM_MODEL ?? null), estimatedUsdPerCall: estimateLlmUsd(project.briefRaw.length) },
+    llm: { mock: isMockMode(), model: isMockMode() ? null : (resolveLlm()?.id ?? null), estimatedUsdPerCall: estimateLlmUsd(project.briefRaw.length) },
   };
 }
 

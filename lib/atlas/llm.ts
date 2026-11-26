@@ -30,9 +30,10 @@ export function getLlmClient(): OpenAI {
   return client;
 }
 
-export function defaultLlmModel(): string {
-  const m = process.env.NIKKA_LLM_MODEL;
-  if (!m) throw new Error("NIKKA_LLM_MODEL is not set (choose an LLM id from the Atlas catalog)");
+export async function defaultLlmModel(): Promise<string> {
+  const { resolveLlm } = await import("@/lib/models/registry");
+  const m = resolveLlm()?.id ?? process.env.NIKKA_LLM_MODEL;
+  if (!m) throw new Error("Aucun LLM : choisis-en un dans le catalogue (node Prompt enhancer) ou mets NIKKA_LLM_MODEL dans .env.local");
   return m;
 }
 
@@ -43,7 +44,7 @@ export async function chat(messages: ChatMessage[], opts: ChatOptions = {}): Pro
     return { text: opts.json ? "{}" : `[mock] ${last.slice(0, 80)}`, model: "mock/llm" };
   }
   await ensureProxy();
-  const model = opts.model ?? defaultLlmModel();
+  const model = opts.model ?? (await defaultLlmModel());
   const raw = await getLlmClient().chat.completions.create({
     model,
     messages,
