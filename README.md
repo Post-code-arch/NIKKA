@@ -73,6 +73,16 @@ Onglet **Brief** : colle un brief (une phrase, un concept, un découpage complet
 - Les prompts du LLM sont dans `lib/digester/prompts/*.md`, modifiables sans recompiler. Sorties validées par Zod, une seule nouvelle tentative avec l'erreur.
 - Mode mock : lecture par règles et propositions gabarits « [mock] », gratuites. En réel : `NIKKA_LLM_MODEL` dans `.env.local` ; le coût estimé d'un appel s'affiche sous le bouton. Exemples de sorties : `docs/digester-samples.md`.
 
+### Storyboard (phase 6)
+
+- **Planche** (grille par séquence) ou **Timeline** (chaque plan à sa durée réelle, règle en secondes).
+- Carte de plan : prise retenue (la vidéo se lit au survol), numéro, durée, pictos échelle et mouvement, **flèche du mouvement dessinée sur l'image**, statut, badge « proposé / extrait » tant que le plan n'est pas validé, dialogue et son dépliables, coût estimé et réel, carrousel des prises (clic = prise retenue).
+- **Glisser la poignée** pour réordonner, y compris vers une autre séquence. **+** entre deux cartes insère un plan ; les ciseaux **coupent un plan en deux** (durée partagée) ; la corbeille le supprime.
+- **Remplissage par étapes** sur chaque séquence : **Crayonné** (modèle esquisse, style imposé, pour juger le découpage à faible coût), **Images clés**, **Animation** (seulement les plans qui ont une image clé ; un crayonné ne s'anime pas). Toujours une modale avec le coût total estimé à confirmer.
+- **Sélection multiple** : case à cocher ou ⌘/Maj-clic, puis la barre du bas lance l'étape choisie sur la sélection.
+- **Filtres** par statut, personnage, lieu (le glisser-déposer est désactivé pendant un filtre).
+- **Animatique** d'une séquence : enchaîne les prises retenues aux durées des plans (vidéo, ou image fixe avec zoom lent, ou texte de l'action si pas d'image). Espace = pause, Échap = fermer.
+
 ## Organisation
 
 - `lib/atlas` — client Atlas côté serveur uniquement : upload, génération, polling (backoff + timeout), téléchargement dans `storage/assets/<sha256>.<ext>`, catalogue et schémas d'entrée des modèles, LLM (SDK `openai`), mode mock.
@@ -83,6 +93,7 @@ Onglet **Brief** : colle un brief (une phrase, un concept, un découpage complet
 - `lib/prompt` — assemblage du prompt d'un plan (`build.ts`) et aperçu par étape (`shot.ts`).
 - `lib/graph` — les 6 nodes et leurs ports (`types.ts`), moteur serveur du canvas du projet (`run.ts`) : résultats (`node_runs`) et envoi optionnel à un plan.
 - `lib/digester` — digester du brief : schémas Zod, prompts en fichiers séparés, appel LLM avec une nouvelle tentative, mock par règles, création des références et des plans.
+- `lib/storyboard` — déplacement, insertion et découpe des plans ; génération par lots (crayonné, images clés, animation) avec coût total confirmé.
 - `lib/refs` — sélection automatique des vues selon l'échelle du plan (`select.ts`, testé), assistant de pack (`pack.ts`), libellés des vues.
 - `app/api` — routes CRUD projets / séquences / plans / références, génération, `/api/jobs`, `/api/assets/:id`.
 - `storage/assets`, `data` — médias et base locale (non versionnés).

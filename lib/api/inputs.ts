@@ -26,6 +26,7 @@ export const SequenceUpdate = z.object({
 });
 
 export const ShotCreate = z.object({
+  index: z.number().int().min(0).optional(),
   description: z.string().optional(),
   durationSec: z.number().positive().max(120).optional(),
 });

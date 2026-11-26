@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, Clapperboard, Film, Image as ImageIcon, Loader2, Sparkles, Trash2 } from "lucide-react";
+import { AlertCircle, Check, Clapperboard, Film, GripVertical, Image as ImageIcon, Loader2, Pencil, Scissors, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { IconPill } from "@/components/ui/pill";
 import type { ShotStatus, Take } from "@/db/schema";
@@ -15,8 +15,9 @@ import { DEFAULT_CAMERA } from "@/lib/camera/types";
 import { useUiStore } from "@/lib/store/ui-store";
 import { cn } from "@/lib/utils";
 import { GenerateDialog } from "./generate-dialog";
+import { MovementOverlay } from "./movement-overlay";
 
-const STATUS_LABEL: Record<ShotStatus, string> = {
+export const STATUS_LABEL: Record<ShotStatus, string> = {
   to_write: "À écrire",
   to_generate: "À générer",
   generating: "En génération",
@@ -66,6 +67,9 @@ export function ShotCard({
   videoCamera,
   defaultKeyframeModel,
   defaultVideoModel,
+  handle,
+  picked,
+  onTogglePick,
 }: {
   shot: ShotWithTakes;
   number: string;
@@ -75,6 +79,10 @@ export function ShotCard({
   videoCamera?: CameraCapabilities;
   defaultKeyframeModel?: string | null;
   defaultVideoModel?: string | null;
+  /** Drag handle props (dnd-kit listeners and attributes). */
+  handle?: React.HTMLAttributes<HTMLElement>;
+  picked?: boolean;
+  onTogglePick?: () => void;
 }) {
   const selectedShotId = useUiStore((s) => s.selectedShotId);
   const selectShot = useUiStore((s) => s.selectShot);
@@ -83,6 +91,7 @@ export function ShotCard({
   const unsupported = !supportsMovement(videoCamera, camera.movement);
   const [description, setDescription] = useState(shot.description.value);
   const [dialog, setDialog] = useState<null | "keyframe" | "video">(null);
+  const [expanded, setExpanded] = useState(false);
 
   const selected =
     shot.takes.find((t) => t.id === shot.selectedTakeId) ??
@@ -91,7 +100,9 @@ export function ShotCard({
   const keyframeForVideo = selected?.status === "completed" && selected.assetId && assets[selected.assetId]?.kind === "image"
     ? selected
     : undefined;
-  const cost = shot.takes.reduce((n, t) => n + (t.costActualUsd ?? t.costEstimatedUsd), 0);
+  const estimated = shot.takes.reduce((n, t) => n + t.costEstimatedUsd, 0);
+  const actual = shot.takes.reduce((n, t) => n + (t.costActualUsd ?? 0), 0);
+  const notes = [shot.dialogue?.value && `« ${shot.dialogue.value} »`, shot.sound?.value && `Son : ${shot.sound.value}`].filter(Boolean).join(" · ");
 
   const save = async (patch: Record<string, unknown>) => {
     await api(`/api/shots/${shot.id}`, { method: "PATCH", body: patch });
@@ -102,6 +113,21 @@ export function ShotCard({
     <div className="w-64 shrink-0">
       <div className="mb-2 flex h-6 items-center justify-between px-1 text-[11px]">
         <span className="flex items-center gap-2">
+          {handle && (
+            <span {...handle} className="-ml-1 cursor-grab touch-none text-muted-foreground/60 hover:text-foreground active:cursor-grabbing" aria-label="Déplacer le plan" title="Glisser pour réordonner">
+              <GripVertical className="size-3.5" />
+            </span>
+          )}
+          {onTogglePick && (
+            <button
+              type="button"
+              aria-label={picked ? "Retirer de la sélection" : "Ajouter à la sélection"}
+              onClick={onTogglePick}
+              className={cn("grid size-3.5 place-items-center rounded-[4px] border", picked ? "border-foreground bg-foreground text-background" : "border-muted-foreground/40")}
+            >
+              {picked && <Check className="size-2.5" />}
+            </button>
+          )}
           <span className="font-mono text-foreground">{number}</span>
           <span className="font-mono text-muted-foreground">{shot.durationSec}s</span>
           <span className="flex items-center gap-0.5 text-muted-foreground" title={`${SCALE_LABEL[camera.scale]} · ${MOVEMENT_LABEL[camera.movement]}`}>
@@ -110,15 +136,25 @@ export function ShotCard({
             {unsupported && <AlertCircle className="size-3 text-origin-proposed" />}
           </span>
         </span>
-        <span className="text-muted-foreground">{STATUS_LABEL[shot.status]}</span>
+        <span className="flex items-center gap-1.5 text-muted-foreground">
+          {shot.description.origin !== "validated" && shot.description.value && (
+            <span className="rounded-full bg-origin-proposed/15 px-1.5 text-[9px] text-origin-proposed uppercase" title="Plan encore proposé : à valider dans le Brief ou en le modifiant">
+              {shot.description.origin === "proposed" ? "proposé" : "extrait"}
+            </span>
+          )}
+          {STATUS_LABEL[shot.status]}
+        </span>
       </div>
       <div
         onClick={(e) => {
-          if (!(e.target as HTMLElement).closest("button,textarea,video")) selectShot(isSelected ? null : shot.id);
+          if ((e.target as HTMLElement).closest("button,textarea,video")) return;
+          if ((e.metaKey || e.ctrlKey || e.shiftKey) && onTogglePick) onTogglePick();
+          else selectShot(isSelected ? null : shot.id);
         }}
         className={cn(
           "cursor-pointer rounded-[14px] border bg-surface p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.5)]",
           isSelected && "border-foreground/50",
+          picked && "ring-2 ring-port-image/70",
         )}
       >
         <div className="relative aspect-video overflow-hidden rounded-[10px] bg-surface-2">
@@ -128,6 +164,9 @@ export function ShotCard({
             <div className="grid size-full place-items-center text-muted-foreground/50">
               <Clapperboard className="size-6" />
             </div>
+          )}
+          {camera.movement !== "static" && (
+            <MovementOverlay movement={camera.movement} className="pointer-events-none absolute inset-0 size-full opacity-80" />
           )}
         </div>
 
@@ -139,6 +178,16 @@ export function ShotCard({
           placeholder="Action du plan…"
           className="mt-1.5 w-full resize-none rounded-md bg-transparent px-1.5 py-1 text-[11px] leading-relaxed outline-none placeholder:text-muted-foreground/50 focus:bg-surface-2"
         />
+        {notes && (
+          <button
+            type="button"
+            onClick={() => setExpanded((x) => !x)}
+            title={expanded ? "Replier" : "Déplier"}
+            className={cn("mb-1 block w-full px-1.5 text-left text-[10px] text-muted-foreground", !expanded && "truncate")}
+          >
+            {notes}
+          </button>
+        )}
 
         <div className="flex items-center gap-1 px-0.5 pb-0.5">
           <Button size="sm" variant="secondary" className="h-7 flex-1 text-[11px]" onClick={() => setDialog("keyframe")} disabled={!description.trim()}>
@@ -148,6 +197,10 @@ export function ShotCard({
             title={keyframeForVideo ? "Animer la prise retenue" : "Il faut d'abord une image clé terminée"}>
             <Film /> Animer
           </Button>
+          <IconPill aria-label="Couper le plan en deux" title="Couper en deux" className="size-7 bg-transparent"
+            onClick={() => void api(`/api/shots/${shot.id}/split`, { body: {} }).then(onChanged)}>
+            <Scissors />
+          </IconPill>
           <IconPill aria-label="Supprimer le plan" className="size-7 bg-transparent"
             onClick={() => confirm("Supprimer ce plan et ses prises ?") && void api(`/api/shots/${shot.id}`, { method: "DELETE" }).then(onChanged)}>
             <Trash2 />
@@ -170,10 +223,15 @@ export function ShotCard({
             >
               <TakeMedia take={t} assets={assets} className="size-full text-[0px]" />
               {t.stage === "video" && <Film className="absolute right-0.5 bottom-0.5 size-2.5 text-white drop-shadow" />}
-              {t.stage !== "video" && t.status === "completed" && <ImageIcon className="absolute right-0.5 bottom-0.5 size-2.5 text-white drop-shadow" />}
+              {t.stage === "keyframe" && t.status === "completed" && <ImageIcon className="absolute right-0.5 bottom-0.5 size-2.5 text-white drop-shadow" />}
+              {t.stage === "sketch" && t.status === "completed" && <Pencil className="absolute right-0.5 bottom-0.5 size-2.5 text-white drop-shadow" />}
             </button>
           ))}
-          <span className="ml-auto pl-1 font-mono text-[10px] text-muted-foreground">{formatUsd(cost)}</span>
+          <span className="ml-auto shrink-0 pl-1 text-right font-mono text-[10px] leading-tight text-muted-foreground" title="Coût estimé / coût réel">
+            {formatUsd(estimated)}
+            <br />
+            <span className="text-foreground/80">{formatUsd(actual)}</span>
+          </span>
         </div>
       )}
 

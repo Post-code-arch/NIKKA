@@ -183,3 +183,13 @@ body {
 .react-flow__handle.nk-port.react-flow__handle-right:hover {
   transform: translate(50%, -50%) scale(1.35);
 }
+
+/* Animatic: slow zoom on still images. */
+@keyframes nikka-kenburns {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.08);
+  }
+}

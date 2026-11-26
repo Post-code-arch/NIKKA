@@ -1,5 +1,11 @@
 # Décisions produit (écarts au PRD)
 
+## 2026-11-26 — Storyboard : pas de « sous-graphe » au clic (PRD §10)
+
+Le PRD prévoyait, au clic sur une carte, une vue partagée storyboard / sous-graphe du plan. Depuis le canvas unique par projet (décision ci-dessous), un plan n'a plus de sous-graphe. Le clic ouvre la **fiche du plan** à droite (caméra, références, prompt final) ; le lien avec le canvas passe par « Envoyer au plan… ».
+
+Autre précision : l'étape Animation ne part que d'une **image clé** terminée, jamais d'un crayonné (qui sert à juger le découpage).
+
 ## 2026-11-25 — Un seul canvas par projet, 6 nodes (remplace « canvas libre par plan »)
 
 Demande du fondateur : des nodes indépendants des séquences, avec une liaison possible au storyboard.
