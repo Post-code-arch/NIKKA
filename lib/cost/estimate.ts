@@ -1,6 +1,8 @@
 /** PRD §11: unit price × (images | seconds) × variants. */
 export interface PricingLike {
   pricing: { unit: "image" | "second" | "request"; usd: number };
+  /** Durations the model accepts; a request is snapped to the closest one. */
+  durations?: number[];
 }
 
 export function estimateCostUsd(
@@ -8,8 +10,15 @@ export function estimateCostUsd(
   opts: { seconds?: number; variants?: number } = {},
 ): number {
   const variants = Math.max(1, opts.variants ?? 1);
-  const units = model.pricing.unit === "second" ? Math.max(0, opts.seconds ?? 0) : 1;
+  const units = model.pricing.unit === "second" ? billedSeconds(model, opts.seconds ?? 0) : 1;
   return round(model.pricing.usd * units * variants);
+}
+
+/** Seconds the model will really produce: the closest duration it accepts. */
+export function billedSeconds(model: { durations?: number[] }, seconds: number): number {
+  const allowed = model.durations?.filter((d) => d > 0) ?? [];
+  if (!allowed.length || seconds <= 0) return Math.max(0, seconds);
+  return allowed.reduce((a, b) => (Math.abs(b - seconds) < Math.abs(a - seconds) ? b : a));
 }
 
 export const DEFAULT_CONFIRM_THRESHOLD_USD = 2;

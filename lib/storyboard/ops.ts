@@ -120,6 +120,7 @@ export interface BatchItem {
   modelId?: string;
   prompt?: string;
   parentTakeId?: string;
+  durationSec?: number;
   costEstimatedUsd: number;
   /** Why this shot is left out (no keyframe to animate, no action…). */
   skipped?: string;
@@ -186,6 +187,7 @@ export function planBatch(shotIds: string[], stage: BatchStage): BatchPlan {
         modelId: model.id,
         prompt: stage === "sketch" ? `${base} ${SKETCH_STYLE}.` : base,
         parentTakeId,
+        durationSec: stage === "video" ? shot.durationSec : undefined,
         costEstimatedUsd: estimateCostUsd(model, { seconds: shot.durationSec }),
       },
     ];
@@ -213,6 +215,8 @@ export async function launchBatch(shotIds: string[], stage: BatchStage, confirme
         stage,
         prompt: item.prompt!,
         parentTakeId: item.parentTakeId,
+        // The shot's duration goes to the model (it was missing: the model used its default).
+        durationSec: item.durationSec,
         confirmedCostUsd: item.costEstimatedUsd,
       });
       results.push({ shotId: item.shotId, takeId: take.id });

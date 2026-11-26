@@ -85,5 +85,11 @@ describe("storyboard ops", () => {
     const v = ops.planBatch(ids, "video");
     expect(v.count).toBe(3);
     expect(v.items.every((i) => i.parentTakeId)).toBe(true);
+    // 4 s shots, model accepting 5 or 10 s: the estimate counts the 5 s really produced…
+    expect(v.items[0].costEstimatedUsd).toBeCloseTo(0.05);
+    // …and the shot's duration is sent (it was missing before).
+    const r = await ops.launchBatch([ids[0]], "video", 1);
+    const take = db.select().from(schema.takes).all().find((t) => t.id === r.results[0].takeId)!;
+    expect(take.params.duration).toBe(5);
   }, 30_000);
 });
