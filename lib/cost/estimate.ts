@@ -1,17 +1,38 @@
+import { choicesOf, optionKey, type ModelOptions } from "@/lib/models/options";
+
 /** PRD §11: unit price × (images | seconds) × variants. */
 export interface PricingLike {
   pricing: { unit: "image" | "second" | "request"; usd: number };
   /** Durations the model accepts; a request is snapped to the closest one. */
   durations?: number[];
+  /** Real unit price learned per definition / quality ("4K", "1080p · high"). */
+  pricingByOption?: Record<string, number>;
 }
 
 export function estimateCostUsd(
   model: PricingLike,
-  opts: { seconds?: number; variants?: number } = {},
+  opts: { seconds?: number; variants?: number; option?: string } = {},
 ): number {
   const variants = Math.max(1, opts.variants ?? 1);
   const units = model.pricing.unit === "second" ? billedSeconds(model, opts.seconds ?? 0) : 1;
-  return round(model.pricing.usd * units * variants);
+  return round(unitPriceFor(model, opts.option) * units * variants);
+}
+
+/** Unit price for a definition / quality: the one seen on a bill, else the model's price. */
+export function unitPriceFor(model: PricingLike, option?: string): number {
+  return (option ? model.pricingByOption?.[option] : undefined) ?? model.pricing.usd;
+}
+
+/** True when the price of this definition / quality was never seen on a bill. */
+export function priceUnconfirmed(
+  model: PricingLike & { mock?: boolean; priceConfirmed?: boolean; options?: ModelOptions },
+  option?: string,
+): boolean {
+  if (model.mock) return false;
+  if (option && model.pricingByOption?.[option] !== undefined) return false;
+  // The base price stands for the model's default definition / quality only.
+  const isDefault = !option || option === optionKey(model.options, choicesOf(model.options).defaults);
+  return !(isDefault && model.priceConfirmed);
 }
 
 /** Seconds the model will really produce: the closest duration it accepts. */

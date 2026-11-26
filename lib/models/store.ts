@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { classify, describe, describeLlm, entryFromDescriptor, type LlmDescriptor, type ModelDescriptor } from "./catalog-adapter";
+import { DESCRIPTOR_VERSION, classify, describe, describeLlm, entryFromDescriptor, type LlmDescriptor, type ModelDescriptor } from "./catalog-adapter";
+import { choicesOf, optionKey, optionKeyFromBody } from "./options";
 import { KNOWN_PRICES } from "./known-prices";
 import type { ModelEntry } from "./types";
 
@@ -30,24 +31,39 @@ export function readStore(): Required<StoreFile> & { entries: ModelEntry[] } {
   if (!cache || cache.mtime !== mtime || cache.path !== f) {
     const raw = JSON.parse(readFileSync(f, "utf8")) as Partial<StoreFile>;
     const data = { media: raw.media ?? [], llm: raw.llm ?? [], observed: raw.observed ?? {} };
-    // A price seen on a real bill replaces the catalog base price.
-    const priced = data.media.map((d) => {
+    // A price seen on a real bill replaces the catalog base price, per definition / quality.
+    const entries = data.media.map((d) => {
       const usd = data.observed[d.id]?.usd ?? KNOWN_PRICES[d.id];
-      return usd !== undefined ? { ...d, pricing: { ...d.pricing, usd }, priceUnitAssumed: false } : d;
+      const byOption: Record<string, number> = {};
+      // Known real prices first, then what this install learned.
+      for (const [key, known] of Object.entries(KNOWN_PRICES)) if (key.startsWith(`${d.id}|`)) byOption[key.slice(d.id.length + 1)] = known;
+      for (const [key, o] of Object.entries(data.observed)) if (key.startsWith(`${d.id}|`)) byOption[key.slice(d.id.length + 1)] = o.usd;
+      const entry = entryFromDescriptor(usd !== undefined ? { ...d, pricing: { ...d.pricing, usd }, priceUnitAssumed: false } : d);
+      return { ...entry, pricingByOption: byOption, priceConfirmed: usd !== undefined };
     });
-    cache = { mtime, path: f, data, entries: priced.map(entryFromDescriptor) };
+    cache = { mtime, path: f, data, entries };
   }
   return { ...cache.data, entries: cache.entries };
 }
 
-/** Learns a model's real unit price (USD per image, or per second of video) from a bill. */
-export function recordObservedPrice(modelId: string, unitUsd: number) {
+/**
+ * Learns a model's real unit price (USD per image, or per second of video)
+ * from a bill, for the definition / quality that was billed. The model's
+ * default definition also sets its base price.
+ */
+export function recordObservedPrice(modelId: string, unitUsd: number, body: Record<string, unknown> = {}) {
   if (!(unitUsd >= 0) || !Number.isFinite(unitUsd)) return;
   const store = readStore();
-  if (!store.entries.some((e) => e.id === modelId)) return;
+  const entry = store.entries.find((e) => e.id === modelId);
+  if (!entry) return;
   const usd = Math.round(unitUsd * 100000) / 100000;
-  if (store.observed[modelId]?.usd === usd) return;
-  write({ media: store.media, llm: store.llm, observed: { ...store.observed, [modelId]: { usd, at: Date.now() } } });
+  const key = optionKeyFromBody(entry.options, body);
+  const isDefault = !key || key === optionKey(entry.options, choicesOf(entry.options).defaults);
+  const observed = { ...store.observed };
+  if (key) observed[`${modelId}|${key}`] = { usd, at: Date.now() };
+  if (isDefault) observed[modelId] = { usd, at: Date.now() };
+  if (JSON.stringify(observed) === JSON.stringify(store.observed)) return;
+  write({ media: store.media, llm: store.llm, observed });
 }
 
 /** The pricing unit of an enabled model. */
@@ -97,11 +113,18 @@ export const RECOMMENDED = [
 ];
 
 let seeding: Promise<void> | null = null;
+/**
+ * First live run: enables the recommended set. Later runs: models described
+ * with older rules are rebuilt from their schema (they gain new options such
+ * as format and definition); learned prices are kept.
+ */
 export function ensureRecommended(): Promise<void> {
   const { media, llm } = readStore();
-  if (media.length || llm.length) return Promise.resolve();
+  const outdated = media.filter((d) => (d.v ?? 1) < DESCRIPTOR_VERSION).map((d) => d.id);
+  if ((media.length || llm.length) && !outdated.length) return Promise.resolve();
   seeding ??= (async () => {
-    for (const id of RECOMMENDED) await enableModel(id).catch(() => undefined);
+    const ids = media.length || llm.length ? outdated : RECOMMENDED;
+    for (const id of ids) await enableModel(id).catch(() => undefined);
   })().finally(() => {
     seeding = null;
   });

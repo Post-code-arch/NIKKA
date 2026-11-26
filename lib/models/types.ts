@@ -18,7 +18,9 @@ export interface GenericInputs {
   endImageUrl?: string;
   durationSec?: number;
   aspectRatio?: string;
+  /** Definition picked in the node (1K/2K/4K, 720p…). */
   resolution?: string;
+  quality?: string;
 }
 
 export type { CameraCapabilities };
@@ -35,6 +37,12 @@ export interface ModelEntry {
   supportsSeed?: boolean;
   supportsNegativePrompt?: boolean;
   durations?: number[];
+  /** Format / definition / quality offered by the model (from its schema). */
+  options?: import("./options").ModelOptions;
+  /** Learned real unit price per definition/quality ("2K", "4k", "1080p · high"…). */
+  pricingByOption?: Record<string, number>;
+  /** The base price was seen on a real bill (or is a known real price). */
+  priceConfirmed?: boolean;
   resolutions?: string[];
   pricing: { unit: "image" | "second" | "request"; usd: number };
   tier: ModelTier;

@@ -1,5 +1,23 @@
 import type { LlmDescriptor } from "./catalog-adapter";
+import { optionFields, type ModelOptions } from "./options";
 import type { ModelEntry } from "./types";
+
+/** Mock output options, shaped like real schemas (sizes for images, resolution for videos). */
+const MOCK_IMAGE_OPTIONS: ModelOptions = {
+  sizes: {
+    field: "size",
+    default: "1024*1024",
+    values: ["1024*1024", "1344*768", "768*1344", "2048*2048", "2688*1536", "1536*2688", "4096*4096", "4096*2304", "2304*4096"].map((v) => {
+      const [w, h] = v.split("*").map(Number);
+      return { value: v, w, h };
+    }),
+  },
+  quality: { field: "quality", values: ["low", "medium", "high"], default: "medium" },
+};
+const MOCK_VIDEO_OPTIONS: ModelOptions = {
+  format: { field: "aspect_ratio", values: ["16:9", "9:16", "1:1"], default: "16:9" },
+  definition: { field: "resolution", values: ["480p", "720p", "1080p", "4k"], default: "720p" },
+};
 
 /**
  * Models served by the local mock backend (lib/atlas/mock.ts). Their
@@ -15,12 +33,14 @@ export const MOCK_MODELS: ModelEntry[] = [
     kind: "t2i",
     supportsSeed: true,
     supportsNegativePrompt: true,
+    options: MOCK_IMAGE_OPTIONS,
     pricing: { unit: "image", usd: 0.003 },
     tier: "sketch",
     endpoint: "generateImage",
     mock: true,
     mapInputs: (g) => ({
       prompt: g.prompt,
+      ...optionFields(MOCK_IMAGE_OPTIONS, g),
       ...(g.negativePrompt ? { negative_prompt: g.negativePrompt } : {}),
       ...(g.seed !== undefined ? { seed: g.seed } : {}),
     }),
@@ -109,6 +129,7 @@ export const MOCK_MODELS: ModelEntry[] = [
     tier: "draft",
     endpoint: "generateVideo",
     mock: true,
+    options: MOCK_VIDEO_OPTIONS,
     // Deliberately limited, to exercise the « mouvement non supporté » warning.
     camera: {
       movements: ["static", "pan_left", "pan_right", "tilt_up", "tilt_down", "dolly_in", "dolly_out", "zoom_in", "zoom_out", "handheld"],
@@ -116,6 +137,7 @@ export const MOCK_MODELS: ModelEntry[] = [
     mapInputs: (g) => ({
       prompt: g.prompt,
       image: g.startImageUrl,
+      ...optionFields(MOCK_VIDEO_OPTIONS, g),
       duration: g.durationSec && g.durationSec > 5 ? 10 : 5,
     }),
   },

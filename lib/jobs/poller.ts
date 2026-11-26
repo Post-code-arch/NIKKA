@@ -168,11 +168,12 @@ function learnPrice(job: Job, billedUsd: number, assetId: string | undefined) {
         : undefined;
   if (!row) return;
   const unit = pricingUnit(row.model);
-  if (unit === "image" || unit === "request") return recordObservedPrice(row.model, billedUsd);
+  const body = (row.params ?? {}) as Record<string, unknown>;
+  if (unit === "image" || unit === "request") return recordObservedPrice(row.model, billedUsd, body);
   if (unit === "second") {
     const asset = assetId ? db.select().from(schema.assets).where(eq(schema.assets.id, assetId)).get() : undefined;
     const seconds = Math.round(asset?.durationSec ?? 0);
-    if (seconds > 0) recordObservedPrice(row.model, billedUsd / seconds);
+    if (seconds > 0) recordObservedPrice(row.model, billedUsd / seconds, body);
   }
 }
 

@@ -12,6 +12,7 @@ import { DEFAULT_CONFIRM_THRESHOLD_USD, estimateCostUsd, round } from "@/lib/cos
 import { GenerationError } from "@/lib/generation/service";
 import { ensurePoller, refreshShotStatus } from "@/lib/jobs/poller";
 import { availableModels, getModel, resolveLlm } from "@/lib/models/registry";
+import { optionKey } from "@/lib/models/options";
 import type { GenericInputs, ModelEntry } from "@/lib/models/types";
 import { CanvasGraphSchema, NODE_SPECS, incoming, isValidEdge, sanitizeGraph, type CanvasGraph, type GraphNode } from "./types";
 
@@ -166,6 +167,11 @@ function findGenNode(graph: CanvasGraph, nodeId: string): GraphNode {
   return n;
 }
 
+/** Format / definition / quality picked in the node. */
+function choiceOf(node: GraphNode) {
+  return { aspectRatio: node.data.aspectRatio, resolution: node.data.resolution, quality: node.data.quality };
+}
+
 function durationOf(node: GraphNode, model: ModelEntry): number | undefined {
   if (model.endpoint !== "generateVideo") return undefined;
   return node.data.durationSec ?? model.durations?.[0] ?? DEFAULT_DURATION_SEC;
@@ -177,7 +183,10 @@ export function estimateRun(projectId: string, opts: RunOptions): RunEstimate {
   const node = findGenNode(graph, opts.nodeId);
   const model = nodeModel(node, graph);
   const variants = Math.min(8, Math.max(1, opts.variants ?? 1));
-  const unit = estimateCostUsd(model, { seconds: durationOf(node, model) ?? DEFAULT_DURATION_SEC });
+  const unit = estimateCostUsd(model, {
+    seconds: durationOf(node, model) ?? DEFAULT_DURATION_SEC,
+    option: optionKey(model.options, choiceOf(node)),
+  });
   const total = round(unit * variants);
   const threshold = project.settings.confirmThresholdUsd ?? DEFAULT_CONFIRM_THRESHOLD_USD;
   return {
@@ -205,7 +214,7 @@ export async function runNode(projectId: string, opts: RunOptions): Promise<{ es
   const node = findGenNode(graph, opts.nodeId);
   const model = nodeModel(node, graph);
   const prompt = resolvePrompt(graph, node);
-  const generic: GenericInputs = { prompt, durationSec: durationOf(node, model) };
+  const generic: GenericInputs = { prompt, durationSec: durationOf(node, model), ...choiceOf(node) };
   const runs = nodeRunsOf(projectId);
   const wired = (handle: string) => incoming(graph, node.id, handle);
 

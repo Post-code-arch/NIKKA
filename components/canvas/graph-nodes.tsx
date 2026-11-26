@@ -8,12 +8,15 @@ import { Port } from "@/components/nodes/port";
 import { Thumb } from "@/components/bible/view-thumb";
 import { IconPill, Pill } from "@/components/ui/pill";
 import type { NodeRun } from "@/db/schema";
-import { estimateCostUsd, formatUsd } from "@/lib/cost/estimate";
+import { estimateCostUsd, formatUsd, priceUnconfirmed } from "@/lib/cost/estimate";
 import { NODE_ORDER, NODE_SPECS, PORT_COLOR, PORT_LABEL, type GraphNodeData, type NodeType } from "@/lib/graph/types";
 import type { ModelInfo } from "@/lib/models/registry";
 import type { ProjectTree } from "@/lib/projects/queries";
 import { assetUrl } from "@/lib/store/api";
+import { choicesOf, definitionLabel, optionKey, resolveChoice } from "@/lib/models/options";
 import { cn } from "@/lib/utils";
+
+const QUALITY_LABEL: Record<string, string> = { low: "basse", medium: "moyenne", high: "haute", xhigh: "très haute", max: "max" };
 import { ModelPicker } from "./model-picker";
 
 /** What every node of the project canvas can read and do. */
@@ -380,7 +383,12 @@ function GeneratorNode({ data, id, type, selected }: Props) {
   const durations = model?.durations ?? [];
   const duration = data.durationSec ?? durations[0] ?? 5;
   const [variants, setVariants] = useState(1);
-  const unit = model ? estimateCostUsd(model, { seconds: video ? duration : 5 }) : 0;
+  const pick = { aspectRatio: data.aspectRatio, resolution: data.resolution, quality: data.quality };
+  const opts = choicesOf(model?.options);
+  const chosen = resolveChoice(model?.options, pick);
+  const option = optionKey(model?.options, pick);
+  const unit = model ? estimateCostUsd(model, { seconds: video ? duration : 5, option }) : 0;
+  const unconfirmed = model ? priceUnconfirmed(model, option) : false;
   const mine = runs.filter((r) => r.nodeId === id);
   const status = runSummary(mine);
   const done = mine.filter((r) => r.status === "completed" && r.assetId);
@@ -408,6 +416,51 @@ function GeneratorNode({ data, id, type, selected }: Props) {
             {t} : choisis-en un autre dans la liste (badges « réf », « négatif », « début + fin »).
           </p>
         ))}
+        {opts.formats.length > 1 && (
+          <NodeField label="Format">
+            <select
+              value={chosen.aspectRatio}
+              onChange={(e) => updateData(id, { aspectRatio: e.target.value })}
+              className="nodrag h-7 rounded-md bg-surface px-1.5 font-mono text-[11px] outline-none"
+            >
+              {opts.formats.map((f) => (
+                <option key={f} value={f}>
+                  {f === "adaptive" ? "auto" : f}
+                </option>
+              ))}
+            </select>
+          </NodeField>
+        )}
+        {opts.definitions.length > 1 && (
+          <NodeField label="Définition">
+            <select
+              value={chosen.resolution}
+              onChange={(e) => updateData(id, { resolution: e.target.value })}
+              className="nodrag h-7 max-w-36 rounded-md bg-surface px-1.5 text-[11px] outline-none"
+            >
+              {opts.definitions.map((d) => (
+                <option key={d} value={d}>
+                  {definitionLabel(d)}
+                </option>
+              ))}
+            </select>
+          </NodeField>
+        )}
+        {opts.qualities.length > 1 && (
+          <NodeField label="Qualité">
+            <select
+              value={chosen.quality}
+              onChange={(e) => updateData(id, { quality: e.target.value })}
+              className="nodrag h-7 rounded-md bg-surface px-1.5 text-[11px] outline-none"
+            >
+              {opts.qualities.map((q) => (
+                <option key={q} value={q}>
+                  {QUALITY_LABEL[q] ?? q}
+                </option>
+              ))}
+            </select>
+          </NodeField>
+        )}
         {video && durations.length > 0 && (
           <NodeField label="Durée">
             <select
@@ -458,7 +511,12 @@ function GeneratorNode({ data, id, type, selected }: Props) {
           </div>
         </NodeField>
         <NodeField label="Coût estimé">
-          <NodeValue mono className="justify-end">
+          <NodeValue
+            mono
+            className={cn("justify-end", unconfirmed && "text-origin-proposed")}
+            title={unconfirmed ? "Prix de base du catalogue, jamais vu sur une facture pour ce réglage : le réel peut être plus élevé (souvent ×1,5 à ×2). NIKKA l'apprend au premier appel." : "Prix déjà constaté sur une facture Atlas"}
+          >
+            {unconfirmed ? "≈ " : ""}
             {formatUsd(unit * variants)}
           </NodeValue>
         </NodeField>

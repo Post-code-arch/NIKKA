@@ -183,6 +183,10 @@ export const GraphNodeDataSchema = z.looseObject({
   seed: z.number().int().optional(),
   seedLocked: z.boolean().optional(),
   durationSec: z.number().positive().max(60).optional(),
+  /** generators: output format and quality (only what the model accepts is sent) */
+  aspectRatio: z.string().max(20).optional(),
+  resolution: z.string().max(40).optional(),
+  quality: z.string().max(20).optional(),
   /** generators: the result passed downstream (default: latest completed). */
   selectedRunId: z.string().optional(),
 });

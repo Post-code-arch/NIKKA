@@ -1,5 +1,6 @@
 import { START_IMAGE_FIELDS, findField } from "@/lib/atlas/schema-body";
 import type { CatalogModel, ModelInputSchema, SchemaProperty } from "@/lib/atlas/schemas";
+import { optionFields, parseSize, type ModelOptions } from "./options";
 import type { GenericInputs, ModelEntry, ModelKind, ModelTier } from "./types";
 
 /**
@@ -34,8 +35,12 @@ export interface ModelDescriptor {
     endImage?: string;
     duration?: { name: string; values: number[] };
   };
-  /** Fixed values sent with every call (aspect ratio, audio off…). */
+  /** Fixed values sent with every call (audio off…). */
   fixed: Record<string, unknown>;
+  /** Format / definition / quality the user can pick in the node. */
+  options?: ModelOptions;
+  /** Version of the description rules (older stored descriptions are refreshed). */
+  v?: number;
 }
 
 export interface LlmDescriptor {
@@ -85,22 +90,6 @@ function label(m: CatalogModel) {
 
 function numericEnum(p: SchemaProperty): number[] {
   return (p.enum ?? []).map((v) => Number(v)).filter((n) => Number.isFinite(n) && n > 0);
-}
-
-/** A 16:9-ish value for an aspect / size field, when the schema allows one. */
-function landscape(name: string, p: SchemaProperty): unknown {
-  const values = (p.enum ?? []).map(String);
-  if (name === "aspect_ratio" || name === "ratio") return values.includes("16:9") ? "16:9" : undefined;
-  if (name === "size") {
-    const sizes = values
-      .map((v) => {
-        const [w, h] = v.split(/[x*]/).map(Number);
-        return { v, r: w / h };
-      })
-      .filter((s) => Number.isFinite(s.r) && s.r > 1.2);
-    if (sizes.length) return sizes.sort((a, b) => Math.abs(a.r - 16 / 9) - Math.abs(b.r - 16 / 9))[0].v;
-  }
-  return undefined;
 }
 
 export function describe(m: CatalogModel, schema: ModelInputSchema, price: { usd: number; unit?: string } | null): ModelDescriptor {
@@ -177,14 +166,8 @@ export function describe(m: CatalogModel, schema: ModelInputSchema, price: { usd
   }
 
   const fixed: Record<string, unknown> = {};
-  for (const name of ["aspect_ratio", "ratio", "size"]) {
-    if (!props[name] || (name === "size" && kind === "i2v")) continue;
-    const v = landscape(name, props[name]);
-    if (v !== undefined) {
-      fixed[name] = v;
-      used.add(name);
-    }
-  }
+  const options = readOptions(props, kind);
+  for (const o of [options.format, options.sizes, options.definition, options.quality]) if (o) used.add(o.field);
   // Generated audio costs extra and NIKKA mounts sound later.
   if (props.generate_audio && typeOf(props.generate_audio) === "boolean") {
     fixed.generate_audio = false;
@@ -208,7 +191,45 @@ export function describe(m: CatalogModel, schema: ModelInputSchema, price: { usd
     ...(price?.unit ? {} : { priceUnitAssumed: true }),
     fields,
     fixed,
+    ...(Object.keys(options).length ? { options } : {}),
+    v: DESCRIPTOR_VERSION,
   };
+}
+
+/** Bump when the rules change: stored descriptions older than this are rebuilt from their schema. */
+export const DESCRIPTOR_VERSION = 2;
+
+/** Format, definition and quality offered by the schema (enums only: nothing is guessed). */
+function readOptions(props: ModelInputSchema["properties"], kind: MediaKind): ModelOptions {
+  const o: ModelOptions = {};
+  const enumOf = (p?: SchemaProperty) => (p?.enum ?? []).map(String);
+  const def = (p?: SchemaProperty) => (p?.default !== undefined ? String(p.default) : undefined);
+  for (const name of ["aspect_ratio", "ratio"]) {
+    const values = enumOf(props[name]);
+    if (values.length) {
+      o.format = { field: name, values, default: def(props[name]) };
+      break;
+    }
+  }
+  // Image sizes as an enum of width × height (a free text size is left to the model).
+  if (kind !== "i2v" && props.size) {
+    const values = enumOf(props.size).flatMap((v) => {
+      const s = parseSize(v);
+      return s ? [{ value: v, ...s }] : [];
+    });
+    if (values.length) o.sizes = { field: "size", values, default: def(props.size) };
+  }
+  for (const name of ["resolution", "output_resolution"]) {
+    const values = enumOf(props[name]);
+    // Only real definitions (720p, 2K, 4k…), not named formats like "landscape_16_9".
+    if (values.some((v) => /\d+\s*p\b|\dk\b/i.test(v))) {
+      o.definition = { field: name, values, default: def(props[name]) };
+      break;
+    }
+  }
+  const q = enumOf(props.quality);
+  if (q.length) o.quality = { field: "quality", values: q, default: def(props.quality) };
+  return o;
 }
 
 function closest(values: number[], target: number) {
@@ -230,8 +251,12 @@ export function entryFromDescriptor(d: ModelDescriptor): ModelEntry {
     maxReferenceVideos: f.videoRefs?.max,
     supportsStartEndFrames: !!f.endImage,
     durations: f.duration?.values,
+    options: d.options,
     mapInputs: (g: GenericInputs) => {
-      const body: Record<string, unknown> = { ...d.fixed };
+      const body: Record<string, unknown> = {
+        ...d.fixed,
+        ...optionFields(d.options, { aspectRatio: g.aspectRatio, resolution: g.resolution, quality: g.quality }),
+      };
       if (f.prompt) body[f.prompt] = g.prompt;
       if (f.negativePrompt && g.negativePrompt) body[f.negativePrompt] = g.negativePrompt;
       if (f.seed && g.seed !== undefined) body[f.seed] = g.seed;

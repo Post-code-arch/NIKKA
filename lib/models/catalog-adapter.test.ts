@@ -31,7 +31,7 @@ group("catalog adapter (real schemas)", () => {
     expect(d.tier).toBe("sketch");
     expect(d.pricing).toMatchObject({ unit: "image", usd: 0.003 });
     const body = entryFromDescriptor(d).mapInputs(g);
-    expect(body).toEqual({ prompt: g.prompt, size: "1536x1024" });
+    expect(body).toEqual({ prompt: g.prompt, size: "1536x1024", quality: "medium" });
   });
 
   it("multi-reference edit: images array capped by maxItems, seed, size w*h", () => {
@@ -44,7 +44,7 @@ group("catalog adapter (real schemas)", () => {
   it("image → video: start image, duration snapped to the enum, 16:9", () => {
     const e = entryFromDescriptor(build("bytedance/seedance-v1-pro-fast/image-to-video"));
     expect(e.durations).toContain(5);
-    expect(e.mapInputs({ ...g, durationSec: 7.4 })).toEqual({ prompt: g.prompt, seed: 42, image: "s", duration: 7, aspect_ratio: "16:9" });
+    expect(e.mapInputs({ ...g, durationSec: 7.4 })).toEqual({ prompt: g.prompt, seed: 42, image: "s", duration: 7, aspect_ratio: "16:9", resolution: "480p" });
     expect(e.pricing.unit).toBe("second"); // no unit in the catalog: the cautious one
   });
 
@@ -96,6 +96,34 @@ group("catalog adapter (real schemas)", () => {
     expect(minimax.mapInputs(g)).toMatchObject({ refers: ["i1", "i2", "v1"] });
     const kling = entryFromDescriptor(build("kwaivgi/kling-v4.0-flash/reference-to-video"));
     expect(kling.mapInputs(g)).toMatchObject({ reference_images: ["i1", "i2"], reference_videos: ["v1"] });
+  });
+
+  it("output options: formats, 1K/2K/4K from image sizes, video definitions, quality", async () => {
+    const { choicesOf, optionKey, definitionLabel } = await import("./options");
+    const seedream = entryFromDescriptor(build("bytedance/seedream-v5.0-lite/edit"));
+    const c = choicesOf(seedream.options);
+    expect(c.definitions).toEqual(["2K", "4K"]);
+    expect(c.formats).toContain("16:9");
+    expect(c.formats).toContain("9:16");
+    expect(c.defaults).toMatchObject({ aspectRatio: "16:9", resolution: "2K" });
+    expect(seedream.mapInputs({ prompt: "x", referenceImageUrls: ["u"] }).size).toBe("2848*1600");
+    expect(seedream.mapInputs({ prompt: "x", referenceImageUrls: ["u"], resolution: "4K", aspectRatio: "9:16" }).size).toBe("2304*4096");
+    expect(optionKey(seedream.options, { resolution: "4K" })).toBe("4K");
+
+    const gpt = entryFromDescriptor(build("openai/gpt-image-1.5/text-to-image"));
+    expect(choicesOf(gpt.options)).toMatchObject({ formats: ["3:2", "1:1", "2:3"], qualities: ["low", "medium", "high"], defaults: { aspectRatio: "3:2", quality: "medium" } });
+    expect(gpt.mapInputs({ prompt: "x", aspectRatio: "2:3", quality: "high" })).toEqual({ prompt: "x", size: "1024x1536", quality: "high" });
+
+    const seedance = entryFromDescriptor(build("bytedance/seedance-2.0/reference-to-video"));
+    const v = choicesOf(seedance.options);
+    expect(v.definitions.slice(0, 2)).toEqual(["480p", "720p"]);
+    expect(v.definitions).toContain("4k");
+    expect(definitionLabel("1080p-esr")).toBe("1080p (upscalé)");
+    expect(seedance.mapInputs({ prompt: "x", referenceImageUrls: ["i"], resolution: "1080p", aspectRatio: "9:16" })).toMatchObject({ resolution: "1080p", ratio: "9:16" });
+    // A choice the model does not offer falls back to its default.
+    expect(seedance.mapInputs({ prompt: "x", referenceImageUrls: ["i"], resolution: "8K" })).toMatchObject({ resolution: "720p" });
+    // LTX "resolution" holds named formats, not definitions: left alone.
+    expect(entryFromDescriptor(build("ltx-2.3-quality/image-to-video")).options?.definition).toBeUndefined();
   });
 
   it("LLM prices per million tokens", () => {
