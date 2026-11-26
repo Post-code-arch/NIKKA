@@ -9,7 +9,7 @@ import { api } from "@/lib/store/api";
 import { reloadModels, useModels } from "@/lib/store/models";
 import { cn } from "@/lib/utils";
 
-const KIND_LABEL: Record<ModelKind, string> = {
+export const KIND_LABEL: Record<ModelKind, string> = {
   t2i: "texte → image",
   i2i: "édition (références)",
   t2v: "texte → vidéo",
@@ -22,14 +22,14 @@ const KIND_LABEL: Record<ModelKind, string> = {
 type Filter = "refs" | "videoRefs" | "negative" | "startEnd";
 const FILTER_LABEL: Record<Filter, string> = { refs: "réf", videoRefs: "vidéo réf", negative: "négatif", startEnd: "début + fin" };
 
-function price(usd: number | null | undefined, unit: string | null | undefined) {
+export function price(usd: number | null | undefined, unit: string | null | undefined) {
   if (usd === null || usd === undefined) return "prix ?";
   const v = usd < 0.01 ? usd.toFixed(3) : usd.toFixed(2);
   return `$${v}${unit ? ` / ${unit === "second" ? "s" : unit}` : ""}`;
 }
 
 /** What a model accepts, read from its schema. */
-function Badges({ caps }: { caps?: ModelCaps | null }) {
+export function Badges({ caps }: { caps?: ModelCaps | null }) {
   if (!caps) return null;
   const list = [
     caps.refs ? `réf ×${caps.refs}` : null,

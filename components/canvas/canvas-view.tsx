@@ -255,10 +255,10 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
     }
   };
 
-  const addNode = (type: NodeType, at: { x: number; y: number }, from?: PendingLink) => {
+  const addNode = (type: NodeType, at: { x: number; y: number }, from?: PendingLink, preferredModel?: string) => {
     const id = uniqueId(latest.current.nodes, type);
     const kind = NODE_SPECS[type].model;
-    const modelId = kind ? models.find((m) => m.kind === kind)?.id : undefined;
+    const modelId = preferredModel ?? (kind ? models.find((m) => m.kind === kind)?.id : undefined);
     const data: GraphNodeData = type === "text" ? { text: "" } : modelId ? { modelId } : {};
     // Dropped from an output: the node sits to the right of the cursor; from an input: to the left.
     const position = from?.side === "target" ? { x: at.x - 280, y: at.y - 30 } : from ? { x: at.x, y: at.y - 30 } : at;
@@ -342,13 +342,13 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
   };
 
   /** Adds a node from the library: at the drop point, or in the middle of the view. */
-  const addFromLibrary = (type: NodeType, clientX?: number, clientY?: number) => {
+  const addFromLibrary = (type: NodeType, clientX?: number, clientY?: number, modelId?: string) => {
     const r = wrapper.current?.getBoundingClientRect();
     if (!r) return;
     const x = clientX ?? r.left + r.width / 2 + (panelOpen ? 120 : 0);
     const y = clientY ?? r.top + r.height / 2;
     const at = rf.screenToFlowPosition({ x, y });
-    addNode(type, { x: at.x - 130, y: at.y - 40 });
+    addNode(type, { x: at.x - 130, y: at.y - 40 }, undefined, modelId);
   };
 
   /** Moves through the history and saves the restored state (without recording it again). */
@@ -528,10 +528,11 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
           }
         }}
         onDrop={(e) => {
-          const type = e.dataTransfer.getData(NODE_MIME) as NodeType;
+          // "type" or "type|modelId" (a model dragged from the Models tab).
+          const [type, modelId] = e.dataTransfer.getData(NODE_MIME).split("|") as [NodeType, string | undefined];
           if (type && NODE_SPECS[type]) {
             e.preventDefault();
-            addFromLibrary(type, e.clientX + 130, e.clientY + 40);
+            addFromLibrary(type, e.clientX + 130, e.clientY + 40, modelId || undefined);
           }
         }}
       >
@@ -588,7 +589,7 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
           </p>
         </div>
 
-        <NodeLibrary open={panelOpen} onToggle={() => setPanelOpen(!panelOpen)} onAdd={(type) => addFromLibrary(type)} />
+        <NodeLibrary open={panelOpen} onToggle={() => setPanelOpen(!panelOpen)} onAdd={(type, modelId) => addFromLibrary(type, undefined, undefined, modelId)} />
 
         {box && (
           <div
