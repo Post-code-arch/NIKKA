@@ -1,4 +1,5 @@
 import { handle, json } from "@/lib/api/http";
+import { normalizeVideo } from "@/lib/media/normalize";
 import { storeAsset } from "@/lib/media/store";
 
 const MAX_BYTES = 50 * 1024 * 1024;
@@ -12,8 +13,10 @@ export const POST = handle(async (req: Request) => {
   for (const file of files) {
     if (file.size > MAX_BYTES) return json({ error: `${file.name} dépasse 50 Mo` }, { status: 400 });
     if (!/^(image|video)\//.test(file.type)) return json({ error: `${file.name} n'est pas une image ni une vidéo` }, { status: 400 });
-    const asset = await storeAsset(Buffer.from(await file.arrayBuffer()), file.type, file.name);
-    out.push({ id: asset.id, kind: asset.kind, width: asset.width, height: asset.height });
+    const raw = Buffer.from(await file.arrayBuffer());
+    const norm = file.type.startsWith("video/") ? await normalizeVideo(raw, file.name) : null;
+    const asset = norm ? await storeAsset(norm.data, norm.contentType, norm.fileName) : await storeAsset(raw, file.type, file.name);
+    out.push({ id: asset.id, kind: asset.kind, width: asset.width, height: asset.height, durationSec: asset.durationSec });
   }
   return json(out, { status: 201 });
 });

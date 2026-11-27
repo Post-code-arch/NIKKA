@@ -118,7 +118,8 @@ group("catalog adapter (real schemas)", () => {
     const v = choicesOf(seedance.options);
     expect(v.definitions.slice(0, 2)).toEqual(["480p", "720p"]);
     expect(v.definitions).toContain("4k");
-    expect(definitionLabel("1080p-esr")).toBe("1080p (upscalé)");
+    expect(definitionLabel("1080p-esr")).toBe("1080p (upscalé +)");
+    expect(definitionLabel("720p-sr")).toBe("720p (upscalé)");
     expect(seedance.mapInputs({ prompt: "x", referenceImageUrls: ["i"], resolution: "1080p", aspectRatio: "9:16" })).toMatchObject({ resolution: "1080p", ratio: "9:16" });
     // A choice the model does not offer falls back to its default.
     expect(seedance.mapInputs({ prompt: "x", referenceImageUrls: ["i"], resolution: "8K" })).toMatchObject({ resolution: "720p" });

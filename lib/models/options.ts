@@ -64,9 +64,10 @@ function videoRank(v: string) {
 
 /** Friendly label for a definition value ("1080p-esr" → "1080p (upscalé)"). */
 export function definitionLabel(v: string): string {
-  const up = /-(e?sr)\b/i.test(v);
+  // -sr: plain upscale; -esr: enhanced upscale (more detail, pricier).
+  const up = v.match(/-(e?sr)\b/i)?.[1]?.toLowerCase();
   const base = v.replace(/-(e?sr)\b/i, "").replace(/\s*&\s*/g, " ").toUpperCase().replace(/P\b/, "p").replace(/(\d)K\b/, "$1K");
-  return up ? `${base} (upscalé)` : base;
+  return up === "esr" ? `${base} (upscalé +)` : up ? `${base} (upscalé)` : base;
 }
 
 export interface OptionChoices {

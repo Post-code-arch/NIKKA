@@ -33,7 +33,8 @@ export interface ModelDescriptor {
     videoRefs?: { name: string; max: number; mixed?: boolean };
     startImage?: string;
     endImage?: string;
-    duration?: { name: string; values: number[] };
+    /** auto: the schema accepts -1 = "follow the input video" (Seedance 2.5 video editing). */
+    duration?: { name: string; values: number[]; auto?: boolean };
   };
   /** Fixed values sent with every call (audio off…). */
   fixed: Record<string, unknown>;
@@ -161,7 +162,8 @@ export function describe(m: CatalogModel, schema: ModelInputSchema, price: { usd
       if (!values.length && typeof d.minimum === "number" && typeof d.maximum === "number") {
         values = Array.from({ length: Math.min(30, d.maximum - d.minimum + 1) }, (_, i) => d.minimum! + i).filter((n) => n > 0);
       }
-      if (values.length) fields.duration = { name: claim("duration")!, values };
+      const auto = (d.enum ?? []).some((v) => Number(v) === -1);
+      if (values.length) fields.duration = { name: claim("duration")!, values: values.filter((n) => n > 0), ...(auto ? { auto } : {}) };
     }
   }
 
@@ -197,7 +199,7 @@ export function describe(m: CatalogModel, schema: ModelInputSchema, price: { usd
 }
 
 /** Bump when the rules change: stored descriptions older than this are rebuilt from their schema. */
-export const DESCRIPTOR_VERSION = 2;
+export const DESCRIPTOR_VERSION = 3;
 
 /** Format, definition and quality offered by the schema (enums only: nothing is guessed). */
 function readOptions(props: ModelInputSchema["properties"], kind: MediaKind): ModelOptions {
@@ -251,13 +253,18 @@ export function entryFromDescriptor(d: ModelDescriptor): ModelEntry {
     maxReferenceVideos: f.videoRefs?.max,
     supportsStartEndFrames: !!f.endImage,
     durations: f.duration?.values,
+    supportsDuration: !!f.duration,
+    autoDuration: !!f.duration?.auto,
     options: d.options,
     mapInputs: (g: GenericInputs) => {
       const body: Record<string, unknown> = {
         ...d.fixed,
         ...optionFields(d.options, { aspectRatio: g.aspectRatio, resolution: g.resolution, quality: g.quality }),
       };
-      if (f.prompt) body[f.prompt] = g.prompt;
+      // Editing a source video with a model whose duration can follow it (-1): the
+      // prompt must address the video (@Video1) for the model to switch to edit mode.
+      const editing = !!f.duration?.auto && !!g.sourceVideoUrl;
+      if (f.prompt) body[f.prompt] = editing && !/@video\d/i.test(g.prompt) ? `Edit @Video1: ${g.prompt}` : g.prompt;
       if (f.negativePrompt && g.negativePrompt) body[f.negativePrompt] = g.negativePrompt;
       if (f.seed && g.seed !== undefined) body[f.seed] = g.seed;
       if (f.images && g.referenceImageUrls?.length) {
@@ -273,7 +280,10 @@ export function entryFromDescriptor(d: ModelDescriptor): ModelEntry {
         else body[f.videoRefs.name] = vids;
       }
       if (f.endImage && g.endImageUrl) body[f.endImage] = g.endImageUrl;
-      if (f.duration && g.durationSec) body[f.duration.name] = closest(f.duration.values, g.durationSec);
+      if (f.duration && editing) body[f.duration.name] = -1;
+      else if (f.duration && g.durationSec) body[f.duration.name] = closest(f.duration.values, g.durationSec);
+      // Editing keeps the source's frame: an explicit ratio would be rejected.
+      if (editing && d.options?.format?.values.includes("adaptive")) body[d.options.format.field] = "adaptive";
       return body;
     },
   };

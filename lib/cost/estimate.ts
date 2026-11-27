@@ -9,6 +9,12 @@ export interface PricingLike {
   pricingByOption?: Record<string, number>;
 }
 
+/** A video edit without a duration input outputs the source's length (Kling O3 edit, Wan edit…). */
+export function followsSourceLength(model: { kind: string; durations?: number[]; supportsDuration?: boolean; autoDuration?: boolean }) {
+  if (model.kind !== "v2v" && model.kind !== "r2v") return false;
+  return !!model.autoDuration || (!model.durations?.length && !model.supportsDuration);
+}
+
 export function estimateCostUsd(
   model: PricingLike,
   opts: { seconds?: number; variants?: number; option?: string } = {},

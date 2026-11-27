@@ -37,6 +37,10 @@ export interface ModelEntry {
   supportsSeed?: boolean;
   supportsNegativePrompt?: boolean;
   durations?: number[];
+  /** The model takes a duration input. Without one, a video edit keeps the source's length. */
+  supportsDuration?: boolean;
+  /** Its duration can follow the input video (-1): editing a video keeps its length. */
+  autoDuration?: boolean;
   /** Format / definition / quality offered by the model (from its schema). */
   options?: import("./options").ModelOptions;
   /** Learned real unit price per definition/quality ("2K", "4k", "1080p · high"…). */

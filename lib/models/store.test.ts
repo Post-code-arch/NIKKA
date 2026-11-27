@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { unitPrice } from "@/lib/atlas/catalog";
 import { CatalogModelSchema, ModelInputSchemaSchema } from "@/lib/atlas/schemas";
 import { estimateCostUsd, priceUnconfirmed } from "@/lib/cost/estimate";
-import { describe as describeModel } from "./catalog-adapter";
+import { describe as describeModel, entryFromDescriptor } from "./catalog-adapter";
 import fixtures from "./fixtures/atlas-schemas.json";
 
 let dir: string;
@@ -46,5 +46,22 @@ describe("learned prices per definition / quality", () => {
     const seedream = entry("bytedance/seedream-v5.0-lite/edit");
     expect(priceUnconfirmed(seedream, "4K")).toBe(false);
     expect(priceUnconfirmed(seedream, "2K")).toBe(true);
+  });
+});
+
+describe("video editing that follows the source length", () => {
+  it("Seedance-style duration -1: sends -1 and addresses @Video1 when editing a source video", () => {
+    const m = CatalogModelSchema.parse({ model: "bytedance/seedance-x/reference-to-video", type: "Video", price: { actual: { base_price: "0.1" } } });
+    const schema = ModelInputSchemaSchema.parse({
+      properties: {
+        prompt: { type: "string" },
+        reference_videos: { type: "array", items: { type: "string" }, maxItems: 3 },
+        duration: { type: "integer", enum: [-1, 4, 5, 6] },
+      },
+    });
+    const d = describeModel(m, schema, unitPrice(m));
+    expect(d.fields.duration).toEqual({ name: "duration", values: [4, 5, 6], auto: true });
+    const body = entryFromDescriptor(d).mapInputs({ prompt: "change his clothes", sourceVideoUrl: "https://x/v.mp4", durationSec: 5 });
+    expect(body).toMatchObject({ prompt: "Edit @Video1: change his clothes", reference_videos: ["https://x/v.mp4"], duration: -1 });
   });
 });

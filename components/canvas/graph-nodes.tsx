@@ -8,7 +8,7 @@ import { Port } from "@/components/nodes/port";
 import { Thumb } from "@/components/bible/view-thumb";
 import { IconPill, Pill } from "@/components/ui/pill";
 import type { NodeRun } from "@/db/schema";
-import { estimateCostUsd, formatUsd, priceUnconfirmed } from "@/lib/cost/estimate";
+import { estimateCostUsd, followsSourceLength, formatUsd, priceUnconfirmed } from "@/lib/cost/estimate";
 import { NODE_ORDER, NODE_SPECS, PORT_COLOR, PORT_LABEL, type GraphNodeData, type NodeType } from "@/lib/graph/types";
 import type { ModelInfo } from "@/lib/models/registry";
 import type { ProjectTree } from "@/lib/projects/queries";
@@ -35,6 +35,7 @@ export interface GraphContextValue {
   inputText: (nodeId: string) => string;
   /** Is something wired on this input? */
   wired: (nodeId: string, handle: string) => boolean;
+  sourceSeconds: (nodeId: string) => number | undefined;
   llm: { mock: boolean; estimatedUsdPerCall: number };
 }
 
@@ -361,7 +362,7 @@ function SendToShot({ run }: { run: NodeRun }) {
 }
 
 function GeneratorNode({ data, id, type, selected }: Props) {
-  const { models, runs, updateData, run, wired } = useGraph();
+  const { models, runs, updateData, run, wired, sourceSeconds } = useGraph();
   const spec = NODE_SPECS[type];
   const kind = spec.model!;
   const kinds = [kind, ...(spec.altModels ?? [])];
@@ -382,7 +383,10 @@ function GeneratorNode({ data, id, type, selected }: Props) {
     wired(id, "videos") && model && !model.maxReferenceVideos && "ce modèle n'accepte pas de vidéos de référence",
   ].filter((x): x is string => !!x);
   const durations = model?.durations ?? [];
-  const duration = data.durationSec ?? durations[0] ?? 5;
+  // A video edit without a duration input keeps the source's length.
+  const fromSource = type === "videoToVideo" && !!model && followsSourceLength(model);
+  const srcSec = fromSource ? sourceSeconds(id) : undefined;
+  const duration = fromSource && srcSec ? Math.ceil(srcSec) : (data.durationSec ?? durations[0] ?? 5);
   const [variants, setVariants] = useState(1);
   const pick = { aspectRatio: data.aspectRatio, resolution: data.resolution, quality: data.quality };
   const opts = choicesOf(model?.options);
@@ -417,7 +421,7 @@ function GeneratorNode({ data, id, type, selected }: Props) {
             {t} : choisis-en un autre dans la liste (badges « réf », « négatif », « début + fin »).
           </p>
         ))}
-        {opts.formats.length > 1 && (
+        {opts.formats.length > 1 && !(fromSource && model?.autoDuration) && (
           <NodeField label="Format">
             <select
               value={chosen.aspectRatio}
@@ -462,7 +466,14 @@ function GeneratorNode({ data, id, type, selected }: Props) {
             </select>
           </NodeField>
         )}
-        {video && durations.length > 0 && (
+        {fromSource && (
+          <NodeField label="Durée">
+            <span className="font-mono text-[11px] text-muted-foreground" title="Ce modèle garde la durée de la vidéo source">
+              {srcSec ? `${Math.ceil(srcSec)}s · = source` : "= source"}
+            </span>
+          </NodeField>
+        )}
+        {video && durations.length > 0 && !fromSource && (
           <NodeField label="Durée">
             <select
               value={duration}

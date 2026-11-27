@@ -178,6 +178,8 @@ export const GraphNodeDataSchema = z.looseObject({
   referenceId: z.string().optional(),
   /** image / video: the imported file */
   assetId: z.string().optional(),
+  /** video: length of the imported file, in seconds (for cost estimates) */
+  mediaSec: z.number().positive().optional(),
   /** generators */
   modelId: z.string().optional(),
   seed: z.number().int().optional(),

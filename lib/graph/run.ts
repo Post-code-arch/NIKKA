@@ -8,7 +8,7 @@ import { isMockMode } from "@/lib/atlas/config";
 import { callJson } from "@/lib/digester/llm";
 import { estimateLlmUsd } from "@/lib/digester/service";
 import { z } from "zod";
-import { DEFAULT_CONFIRM_THRESHOLD_USD, estimateCostUsd, round } from "@/lib/cost/estimate";
+import { DEFAULT_CONFIRM_THRESHOLD_USD, estimateCostUsd, followsSourceLength, round } from "@/lib/cost/estimate";
 import { GenerationError } from "@/lib/generation/service";
 import { ensurePoller, refreshShotStatus } from "@/lib/jobs/poller";
 import { availableModels, getModel, resolveLlm } from "@/lib/models/registry";
@@ -177,6 +177,16 @@ function durationOf(node: GraphNode, model: ModelEntry): number | undefined {
   return node.data.durationSec ?? model.durations?.[0] ?? DEFAULT_DURATION_SEC;
 }
 
+/** Billed seconds: a video edit that keeps the source's length is billed on it. */
+function billedSecondsOf(node: GraphNode, model: ModelEntry, graph: CanvasGraph, runs: NodeRun[]): number {
+  if (node.type === "videoToVideo" && followsSourceLength(model)) {
+    const sourceId = incoming(graph, node.id, "source").flatMap((n) => assetsOf(n, runs))[0];
+    const src = sourceId ? getDb().select().from(schema.assets).where(eq(schema.assets.id, sourceId)).get() : undefined;
+    if (src?.durationSec) return Math.ceil(src.durationSec);
+  }
+  return durationOf(node, model) ?? DEFAULT_DURATION_SEC;
+}
+
 export function estimateRun(projectId: string, opts: RunOptions): RunEstimate {
   const project = loadProject(projectId);
   const graph = sanitizeGraph(project.canvas);
@@ -184,7 +194,7 @@ export function estimateRun(projectId: string, opts: RunOptions): RunEstimate {
   const model = nodeModel(node, graph);
   const variants = Math.min(8, Math.max(1, opts.variants ?? 1));
   const unit = estimateCostUsd(model, {
-    seconds: durationOf(node, model) ?? DEFAULT_DURATION_SEC,
+    seconds: billedSecondsOf(node, model, graph, nodeRunsOf(projectId)),
     option: optionKey(model.options, choiceOf(node)),
   });
   const total = round(unit * variants);

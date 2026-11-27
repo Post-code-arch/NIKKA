@@ -532,6 +532,12 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
         .filter(Boolean)
         .join("\n\n"),
     wired: (nodeId: string, handle: string) => edges.some((e) => e.target === nodeId && e.targetHandle === handle),
+    // Length of the video wired into "source" (imported file, or what a generator was set to produce).
+    sourceSeconds: (nodeId: string) => {
+      const e = edges.find((x) => x.target === nodeId && x.targetHandle === "source");
+      const src = e && nodes.find((n) => n.id === e.source);
+      return src?.data.mediaSec ?? src?.data.durationSec;
+    },
     // Saved graph first, then the LLM; the result lands in the node (and downstream).
     enhance: async (nodeId: string) => {
       await flush();
@@ -550,7 +556,10 @@ function ProjectCanvas({ project }: { project: ProjectTree }) {
       form.append("files", file);
       void fetch("/api/assets", { method: "POST", body: form })
         .then((r) => r.json())
-        .then((assets: { id: string }[]) => Array.isArray(assets) && assets[0] && updateData(nodeId, { assetId: assets[0].id }));
+        .then((assets: { id: string; durationSec?: number | null }[]) => {
+          if (!Array.isArray(assets) || !assets[0]) return;
+          updateData(nodeId, { assetId: assets[0].id, mediaSec: assets[0].durationSec ?? undefined });
+        });
     },
   };
 
