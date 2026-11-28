@@ -13,6 +13,7 @@ export const ProjectUpdate = z.object({
       defaultModels: z.record(z.string(), z.string()).optional(),
       budgetUsd: z.number().nonnegative().nullable().optional(),
       confirmThresholdUsd: z.number().nonnegative().optional(),
+      aspectRatio: z.enum(["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"]).optional(),
     })
     .optional(),
 });

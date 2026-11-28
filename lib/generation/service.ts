@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import type { Take, TakeStage } from "@/db/schema";
 import { generateImage, generateVideo, uploadMedia } from "@/lib/atlas";
+import { projectBudgetRefusal } from "@/lib/atlas/budget";
 import { DEFAULT_CONFIRM_THRESHOLD_USD, estimateCostUsd } from "@/lib/cost/estimate";
 import { ensurePoller } from "@/lib/jobs/poller";
 import { getModel } from "@/lib/models/registry";
@@ -84,12 +85,19 @@ export async function createTake(input: CreateTakeInput): Promise<Take> {
   if (estimate.needsConfirmation && (input.confirmedCostUsd ?? -1) < estimate.costEstimatedUsd) {
     throw new GenerationError("Confirmation du coût requise", 409, { ...estimate });
   }
+  const { project } = loadShotContext(input.shotId);
+  if (project) {
+    const refusal = await projectBudgetRefusal(project.id, project.settings.budgetUsd, estimate.costEstimatedUsd);
+    if (refusal) throw new GenerationError(refusal, 402);
+  }
 
   const generic: GenericInputs = {
     prompt: input.prompt,
     negativePrompt: input.negativePrompt,
     seed: model.supportsSeed ? input.seed : undefined,
     durationSec: input.durationSec,
+    // The project's format (9:16 for a reel…), sent only where the model takes it.
+    aspectRatio: project?.settings.aspectRatio,
   };
 
   if (model.kind === "i2i") {

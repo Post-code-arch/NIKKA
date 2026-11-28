@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import type { RefGeneration, ReferenceTag, RefView } from "@/db/schema";
 import { generateImage, uploadMedia } from "@/lib/atlas";
+import { projectBudgetRefusal } from "@/lib/atlas/budget";
 import { DEFAULT_CONFIRM_THRESHOLD_USD, estimateCostUsd, round } from "@/lib/cost/estimate";
 import { GenerationError } from "@/lib/generation/service";
 import { ensurePoller } from "@/lib/jobs/poller";
@@ -107,6 +108,11 @@ export async function launchPack(input: PackInput): Promise<RefGeneration[]> {
   const estimate = estimatePack(input);
   if (estimate.needsConfirmation && (input.confirmedCostUsd ?? -1) < estimate.costEstimatedUsd) {
     throw new GenerationError("Confirmation du coût requise", 409, { ...estimate });
+  }
+  {
+    const project = db.select().from(schema.projects).where(eq(schema.projects.id, ref.projectId)).get();
+    const refusal = project ? await projectBudgetRefusal(project.id, project.settings.budgetUsd, estimate.costEstimatedUsd) : null;
+    if (refusal) throw new GenerationError(refusal, 402);
   }
   if (!ref.descriptor.trim() && !input.sourceAssetId) {
     throw new GenerationError("Sans image source, écris d'abord le descripteur de la référence", 400);

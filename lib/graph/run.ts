@@ -4,6 +4,7 @@ import { desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import type { NodeRun, Take } from "@/db/schema";
 import { generateImage, generateVideo, uploadMedia } from "@/lib/atlas";
+import { projectBudgetRefusal } from "@/lib/atlas/budget";
 import { isMockMode } from "@/lib/atlas/config";
 import { callJson } from "@/lib/digester/llm";
 import { estimateLlmUsd } from "@/lib/digester/service";
@@ -220,6 +221,8 @@ export async function runNode(projectId: string, opts: RunOptions): Promise<{ es
   }
   const db = getDb();
   const project = loadProject(projectId);
+  const refusal = await projectBudgetRefusal(projectId, project.settings.budgetUsd, estimate.costEstimatedUsd);
+  if (refusal) throw new GenerationError(refusal, 402);
   const graph = sanitizeGraph(project.canvas);
   const node = findGenNode(graph, opts.nodeId);
   const model = nodeModel(node, graph);

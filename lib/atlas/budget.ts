@@ -36,15 +36,22 @@ function llmSpentUsd(): number {
     .reduce((n, line) => n + (Number(JSON.parse(line).usd) || 0), 0);
 }
 
+/**
+ * What a generation row costs: its real bill when known, else its estimate while
+ * it may still be billed. A failed one counts only if Atlas billed it (a task
+ * that fails upstream is usually not charged).
+ */
+const BILLED = sql`CASE WHEN status = 'failed' THEN COALESCE(cost_actual_usd, 0) ELSE COALESCE(cost_actual_usd, cost_estimated_usd) END`;
+const REAL = sql`model NOT LIKE 'mock/%'`;
+
 /** Estimated spend on real (non-mock) Atlas calls so far, LLM included. */
 export async function spentUsd(): Promise<number> {
   const { getDb } = await import("@/db");
   const db = getDb();
   // Submitted or about to be (a failed submission is not billed).
-  const where = sql`model NOT LIKE 'mock/%' AND (status != 'failed' OR prediction_id IS NOT NULL)`;
   let total = 0;
   for (const table of ["takes", "node_runs", "ref_generations"]) {
-    const row = db.get<{ s: number | null }>(sql`SELECT SUM(COALESCE(cost_actual_usd, cost_estimated_usd)) AS s FROM ${sql.raw(table)} WHERE ${where}`);
+    const row = db.get<{ s: number | null }>(sql`SELECT SUM(${BILLED}) AS s FROM ${sql.raw(table)} WHERE ${REAL}`);
     total += row?.s ?? 0;
   }
   return total + llmSpentUsd();
@@ -58,4 +65,29 @@ export async function assertUnderCap(what: string) {
   if (spent > cap) {
     throw new SpendCapError(`Plafond de dépense atteint (${spent.toFixed(3)} $ sur ${cap} $) : ${what} non envoyé.`);
   }
+}
+
+/** Real-call spend of one project (storyboard takes, canvas runs, reference packs). */
+export async function projectSpentUsd(projectId: string): Promise<number> {
+  const { getDb } = await import("@/db");
+  const db = getDb();
+  const billed = BILLED;
+  const real = REAL;
+  const q = (query: ReturnType<typeof sql>) => db.get<{ s: number | null }>(query)?.s ?? 0;
+  return (
+    q(sql`SELECT SUM(${billed}) AS s FROM takes WHERE ${real} AND shot_id IN (SELECT s.id FROM shots s JOIN sequences q ON q.id = s.sequence_id WHERE q.project_id = ${projectId})`) +
+    q(sql`SELECT SUM(${billed}) AS s FROM node_runs WHERE ${real} AND project_id = ${projectId}`) +
+    q(sql`SELECT SUM(${billed}) AS s FROM ref_generations WHERE ${real} AND reference_id IN (SELECT id FROM "references" WHERE project_id = ${projectId})`)
+  );
+}
+
+/**
+ * A project's own budget (settings.budgetUsd): returns why a paid call of
+ * `addUsd` must not go, or null. Callers turn it into a 402 before sending.
+ */
+export async function projectBudgetRefusal(projectId: string, budgetUsd: number | undefined | null, addUsd: number): Promise<string | null> {
+  if (budgetUsd === undefined || budgetUsd === null) return null;
+  const spent = await projectSpentUsd(projectId);
+  if (spent + addUsd <= budgetUsd + 1e-9) return null;
+  return `Budget du projet atteint : ${spent.toFixed(2)} $ déjà dépensés + ${addUsd.toFixed(2)} $ dépasseraient ${budgetUsd} $. Rien n'a été envoyé.`;
 }

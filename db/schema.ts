@@ -21,6 +21,8 @@ export type ProjectSettings = {
   budgetUsd?: number;
   /** Generations above this estimate need an explicit confirmation (PRD §11). */
   confirmThresholdUsd?: number;
+  /** Output format of the storyboard's generations ("9:16"…); only sent to models that take it. */
+  aspectRatio?: string;
 };
 
 export const projects = sqliteTable("projects", {

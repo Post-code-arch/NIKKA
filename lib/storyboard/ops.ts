@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import type { Shot, Take } from "@/db/schema";
+import { projectBudgetRefusal } from "@/lib/atlas/budget";
 import { DEFAULT_CAMERA } from "@/lib/camera/types";
 import { DEFAULT_CONFIRM_THRESHOLD_USD, estimateCostUsd, round } from "@/lib/cost/estimate";
 import { userField } from "@/lib/domain/field";
@@ -202,6 +203,13 @@ export function planBatch(shotIds: string[], stage: BatchStage): BatchPlan {
 export async function launchBatch(shotIds: string[], stage: BatchStage, confirmedTotalUsd?: number) {
   const plan = planBatch(shotIds, stage);
   if (plan.count === 0) throw new GenerationError("Aucun plan à générer dans la sélection", 400);
+  {
+    const shot = getDb().select().from(schema.shots).where(eq(schema.shots.id, plan.items[0].shotId)).get()!;
+    const project = getDb().select().from(schema.projects).where(eq(schema.projects.id, sequenceProject(shot.sequenceId))).get()!;
+    // The whole batch must fit in the project's budget, not only its first takes.
+    const refusal = await projectBudgetRefusal(project.id, project.settings.budgetUsd, plan.totalUsd);
+    if (refusal) throw new GenerationError(refusal, 402);
+  }
   if (plan.needsConfirmation && (confirmedTotalUsd ?? -1) < plan.totalUsd) {
     throw new GenerationError("Confirmation du coût total requise", 409, { ...plan });
   }
